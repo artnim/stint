@@ -6,6 +6,8 @@ struct ProjectsSettingsTab: View {
     @State private var newClient = ""
     @State private var newProject = ""
     @State private var newProjectClient: Int64?
+    @State private var clientToDelete: Client?
+    @State private var projectToDelete: Project?
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -15,7 +17,7 @@ struct ProjectsSettingsTab: View {
                     HStack {
                         Text(c.name)
                         Spacer()
-                        Button(role: .destructive) { state.deleteClient(c) } label: { Image(systemName: "minus.circle") }
+                        Button(role: .destructive) { clientToDelete = c } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -34,7 +36,7 @@ struct ProjectsSettingsTab: View {
                             ForEach(state.clients) { c in Text(c.name).tag(Int64?.some(c.id!)) }
                         }
                         .labelsHidden().frame(width: 140)
-                        Button(role: .destructive) { state.deleteProject(p) } label: { Image(systemName: "minus.circle") }
+                        Button(role: .destructive) { projectToDelete = p } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -64,5 +66,15 @@ struct ProjectsSettingsTab: View {
             }
         }
         .padding()
+        .confirmationDialog("Delete client \"\(clientToDelete?.name ?? "")\"?", isPresented: Binding(get: { clientToDelete != nil }, set: { if !$0 { clientToDelete = nil } })) {
+            Button("Delete", role: .destructive) { if let c = clientToDelete { state.deleteClient(c) }; clientToDelete = nil }
+        } message: {
+            Text("Its projects are kept and become unassigned.")
+        }
+        .confirmationDialog("Delete project \"\(projectToDelete?.name ?? "")\"?", isPresented: Binding(get: { projectToDelete != nil }, set: { if !$0 { projectToDelete = nil } })) {
+            Button("Delete", role: .destructive) { if let p = projectToDelete { state.deleteProject(p) }; projectToDelete = nil }
+        } message: {
+            Text("All entries and repositories of this project are kept but lose their project assignment.")
+        }
     }
 }
