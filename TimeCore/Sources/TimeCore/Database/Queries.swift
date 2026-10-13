@@ -108,3 +108,30 @@ extension AppDatabase {
         try write { try Setting(key: key, value: value).save($0) }
     }
 }
+
+public struct ReportFilter: Equatable {
+    public var clientId: Int64?
+    public var projectId: Int64?
+    public init(clientId: Int64? = nil, projectId: Int64? = nil) {
+        self.clientId = clientId; self.projectId = projectId
+    }
+}
+
+extension AppDatabase {
+    /// Finished entries in [from, to) as report lines with project/client names resolved.
+    public func reportEntries(from: Date, to: Date, filter: ReportFilter = ReportFilter(),
+                              userName: String) throws -> [ReportEntry] {
+        let entries = try finishedEntries(from: from, to: to)
+        let projects = Dictionary(uniqueKeysWithValues: try allProjects().map { ($0.id!, $0) })
+        let clients = Dictionary(uniqueKeysWithValues: try allClients().map { ($0.id!, $0) })
+        return entries.compactMap { e in
+            let project = e.projectId.flatMap { projects[$0] }
+            let client = project?.clientId.flatMap { clients[$0] }
+            if let pid = filter.projectId, e.projectId != pid { return nil }
+            if let cid = filter.clientId, project?.clientId != cid { return nil }
+            return ReportEntry(description: e.description, project: project?.name ?? "",
+                               client: client?.name ?? "", user: userName,
+                               start: e.startUTC, end: e.endUTC!, tags: e.tags)
+        }
+    }
+}
