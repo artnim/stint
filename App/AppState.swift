@@ -117,4 +117,31 @@ final class AppState {
         do { try block(); lastError = nil } catch { lastError = "\(error)" }
         refresh()
     }
+
+    func entries(year: Int, month: Int) -> [Entry] {
+        let (s, e) = monthRange(year: year, month: month, calendar: .current)
+        return (try? db.entries(from: s, to: e)) ?? []
+    }
+
+    /// Returns false (and sets lastError) when end is not after start.
+    @discardableResult
+    func update(_ entry: Entry) -> Bool {
+        if let end = entry.endUTC, end <= entry.startUTC {
+            lastError = "End must be after start."
+            return false
+        }
+        perform { try db.update(entry) }
+        return lastError == nil
+    }
+
+    func delete(_ entry: Entry) {
+        perform { try db.delete(entry) }
+    }
+
+    func addEntry(on day: Date) {
+        let cal = Calendar.current
+        let start = cal.date(bySettingHour: 9, minute: 0, second: 0, of: day)!
+        var e = Entry(description: "", startUTC: start, endUTC: start.addingTimeInterval(3600))
+        perform { try db.insert(&e) }
+    }
 }
