@@ -13,6 +13,8 @@ final class AppState {
     var now = Date()
     var staleRunning: Entry?
     var lastError: String?
+    var issueRows: [IssueRow] = []
+    var githubError: String?
 
     private var ticker: Timer?
 
@@ -64,9 +66,45 @@ final class AppState {
             recents = try db.recents(limit: 10)
             projects = try db.allProjects()
             clients = try db.allClients()
+            issueRows = try db.openIssueRows()
         } catch {
             lastError = "\(error)"
         }
+    }
+
+    func syncIssues() async {
+        guard let token = KeychainStore.read(KeychainStore.tokenAccount), !token.isEmpty else {
+            githubError = "No GitHub token. Add one in Settings → GitHub."
+            return
+        }
+        do {
+            let issues = try await GitHubClient(token: token).assignedIssues()
+            try IssueSync.apply(issues, to: db)
+            githubError = nil
+            refresh()
+        } catch GitHubError.unauthorized {
+            githubError = "GitHub rejected the token (401). Check Settings → GitHub."
+        } catch {
+            // offline or rate-limited: keep the cache, stay quiet (spec §3)
+        }
+    }
+
+    func startIssue(_ row: IssueRow) {
+        perform {
+            try db.start(description: "#\(row.issue.number): \(row.issue.title)", projectId: row.repo.projectId,
+                         repoId: row.repo.id, issueNumber: row.issue.number, issueTitle: row.issue.title)
+        }
+    }
+
+    func assignRepo(_ repoId: Int64, to projectId: Int64?) {
+        perform { try db.assignRepo(repoId, toProject: projectId) }
+    }
+
+    @discardableResult
+    func createProject(named name: String, clientId: Int64?) -> Int64? {
+        var p = Project(clientId: clientId, name: name)
+        perform { try db.insert(&p) }
+        return p.id
     }
 
     var userName: String {

@@ -32,7 +32,7 @@ struct PopoverView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    issueSections   // filled in Task 14; empty for now
+                    issueSections
                 }
             }
             .frame(maxHeight: 420)
@@ -51,6 +51,13 @@ struct PopoverView: View {
         }
         .padding(12)
         .frame(width: 380)
+        .task { await state.syncIssues() }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(300))
+                await state.syncIssues()
+            }
+        }
         .sheet(item: $state.staleRunning) { entry in
             StaleTimerSheet(entry: entry)
         }
@@ -63,7 +70,70 @@ struct PopoverView: View {
         }
     }
 
-    @ViewBuilder private var issueSections: some View { EmptyView() }
+    @ViewBuilder private var issueSections: some View {
+        if let err = state.githubError {
+            HStack {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                Text(err).font(.caption)
+                Spacer()
+                SettingsLink { Text("Settings").font(.caption) }
+            }
+            .padding(.top, 6)
+        }
+        ForEach(groupedIssues) { group in
+            let name = group.name
+            sectionHeader(name ?? "Unmapped")
+            ForEach(group.rows) { row in
+                HStack {
+                    Button { state.startIssue(row) } label: {
+                        HStack {
+                            Image(systemName: row.issue.isPullRequest ? "arrow.triangle.pull" : "circle.dotted")
+                                .foregroundStyle(.secondary)
+                            Text("#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
+                            Text(row.issue.title).lineLimit(1)
+                            Spacer()
+                            if name == nil { Text(row.repo.fullName).font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    if name == nil {
+                        Menu("Assign") {
+                            ForEach(state.projects) { p in
+                                Button(p.name) { state.assignRepo(row.repo.id!, to: p.id) }
+                            }
+                            Divider()
+                            Button("New project \"\(row.repo.name)\"") {
+                                let id = state.createProject(named: row.repo.name, clientId: nil)
+                                state.assignRepo(row.repo.id!, to: id)
+                            }
+                        }
+                        .menuStyle(.borderlessButton).frame(width: 70)
+                    }
+                }
+            }
+        }
+    }
+
+    private struct IssueGroup: Identifiable {
+        let name: String?
+        let rows: [IssueRow]
+        var id: String { name ?? "\u{0}unmapped" }
+    }
+
+    /// Mapped projects first (as `openIssueRows` orders them), then one "Unmapped" group.
+    private var groupedIssues: [IssueGroup] {
+        let q = query.lowercased()
+        let rows = q.isEmpty ? state.issueRows : state.issueRows.filter {
+            $0.issue.title.lowercased().contains(q) || "#\($0.issue.number)".contains(q) || $0.repo.fullName.lowercased().contains(q)
+        }
+        var order: [String?] = []
+        var groups: [String?: [IssueRow]] = [:]
+        for r in rows {
+            if groups[r.projectName] == nil { order.append(r.projectName) }
+            groups[r.projectName, default: []].append(r)
+        }
+        return order.map { IssueGroup(name: $0, rows: groups[$0]!) }
+    }
 
     private var newEntryRow: some View {
         HStack {

@@ -5,6 +5,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             GeneralSettingsTab().tabItem { Label("General", systemImage: "gear") }
+            GitHubSettingsTab().tabItem { Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right") }
         }
         .frame(width: 560, height: 420)
     }
