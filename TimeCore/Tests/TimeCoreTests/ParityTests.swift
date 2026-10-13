@@ -32,7 +32,11 @@ final class ParityTests: XCTestCase {
         func days(_ s: String) -> [String] {
             s.matches(of: #/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \d\d \w{3} \d{4}/#).map { String($0.output.0) }
         }
+        func times(_ s: String) -> [String] { s.matches(of: #/\d\d:\d\d – \d\d:\d\d/#).map { String($0.output) }.sorted() }
+        func issues(_ s: String) -> [String] { s.matches(of: #/#\d+/#).map { String($0.output) }.sorted() }
         XCTAssertEqual(hours(ours), hours(theirs), "hour values differ")
+        XCTAssertEqual(times(ours), times(theirs), "time ranges differ")
+        XCTAssertEqual(issues(ours), issues(theirs), "issue numbers differ")
         XCTAssertEqual(days(ours), days(theirs), "day rows differ")
         XCTAssertEqual(report.entryCount, theirs.matches(of: #/ – \d\d:\d\d/#).count, "entry count differs")
         XCTAssertTrue(theirs.contains(fmtHours(report.totalHours, .en)), "total \(report.totalHours) not in reference")
