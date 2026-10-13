@@ -135,3 +135,37 @@ extension AppDatabase {
         }
     }
 }
+
+public struct IssueRow: Equatable, Identifiable {
+    public var issue: IssueCache
+    public var repo: Repo
+    public var projectName: String?
+    public var id: Int64 { issue.id! }
+}
+
+extension AppDatabase {
+    /// Open cached issues, mapped repos first (by project name), then unmapped; within a group by repo name and number.
+    public func openIssueRows() throws -> [IssueRow] {
+        try read { db in
+            let repos = Dictionary(uniqueKeysWithValues: try Repo.fetchAll(db).map { ($0.id!, $0) })
+            let projects = Dictionary(uniqueKeysWithValues: try Project.fetchAll(db).map { ($0.id!, $0) })
+            let rows = try IssueCache.filter(Column("state") == "open").fetchAll(db).map { i -> IssueRow in
+                let repo = repos[i.repoId]!
+                return IssueRow(issue: i, repo: repo, projectName: repo.projectId.flatMap { projects[$0]?.name })
+            }
+            return rows.sorted {
+                let a = ($0.projectName == nil ? 1 : 0, $0.projectName ?? "", $0.repo.fullName, $0.issue.number)
+                let b = ($1.projectName == nil ? 1 : 0, $1.projectName ?? "", $1.repo.fullName, $1.issue.number)
+                return a < b
+            }
+        }
+    }
+
+    public func assignRepo(_ repoId: Int64, toProject projectId: Int64?) throws {
+        try write { db in
+            guard var repo = try Repo.fetchOne(db, key: repoId) else { return }
+            repo.projectId = projectId
+            try repo.update(db)
+        }
+    }
+}

@@ -1,0 +1,13 @@
+[
+  {
+    "number": 101, "title": "Login fails on Safari", "state": "open",
+    "updated_at": "2026-10-10T08:00:00Z",
+    "repository": { "name": "website", "owner": { "login": "artnim" } }
+  },
+  {
+    "number": 42, "title": "Add retry to sync", "state": "open",
+    "updated_at": "2026-10-11T09:30:00Z",
+    "pull_request": { "url": "https://api.github.com/repos/artnim/app/pulls/42" },
+    "repository": { "name": "app", "owner": { "login": "artnim" } }
+  }
+]

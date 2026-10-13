@@ -1,0 +1,7 @@
+[
+  {
+    "number": 7, "title": "Deploy pipeline", "state": "open",
+    "updated_at": "2026-10-12T10:00:00Z",
+    "repository": { "name": "app", "owner": { "login": "artnim" } }
+  }
+]
