@@ -10,6 +10,7 @@ final class AppState {
     var recents: [RecentItem] = []
     var projects: [Project] = []
     var clients: [Client] = []
+    var repos: [Repo] = []
     var now = Date()
     var staleRunning: Entry?
     var lastError: String?
@@ -66,6 +67,7 @@ final class AppState {
             recents = try db.recents(limit: 10)
             projects = try db.allProjects()
             clients = try db.allClients()
+            repos = try db.allRepos()
             issueRows = try db.openIssueRows()
         } catch {
             lastError = "\(error)"
@@ -105,6 +107,23 @@ final class AppState {
         var p = Project(clientId: clientId, name: name)
         perform { try db.insert(&p) }
         return p.id
+    }
+
+    func createClient(named name: String) {
+        var c = Client(name: name)
+        perform { try db.insert(&c) }
+    }
+
+    func deleteClient(_ c: Client) {
+        perform { try db.delete(c) }     // projects keep existing with clientId = NULL
+    }
+
+    func deleteProject(_ p: Project) {
+        perform { try db.delete(p) }     // entries and repos keep existing with projectId = NULL
+    }
+
+    func updateProject(_ p: Project) {
+        perform { try db.update(p) }
     }
 
     var userName: String {
