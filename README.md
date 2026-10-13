@@ -23,4 +23,6 @@ Design: `docs/superpowers/specs/2026-10-13-timetracker-design.md`.
 
 Durations are rounded up to 15 minutes at report time; the database keeps the exact times.
 
+If you place the database on a synced folder (iCloud Drive, Dropbox), keep the app running on one machine only; SQLite files do not merge.
+
 Before the first real use, run the parity gate described in `docs/parity.md` for two months.
