@@ -67,4 +67,12 @@ final class CSVImporterTests: XCTestCase {
         XCTAssertEqual(report.days.count, 2)
         XCTAssertEqual(report.meta.client, "mehrere (2)")
     }
+
+    func testDuplicateHeaderColumnsDoNotCrash() throws {
+        let text = "Description,Description,Start,End\nfirst,second,2026-08-03 09:00:00,2026-08-03 10:00:00\n"
+        let r = try importer.importText(text)
+        XCTAssertEqual(r.imported, 1)
+        let e = try db.read { try Entry.fetchOne($0) }
+        XCTAssertEqual(e?.description, "first")
+    }
 }

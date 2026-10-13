@@ -36,7 +36,7 @@ public struct CSVImporter {
     public func importText(_ text: String) throws -> CSVImportResult {
         let rows = parseCSV(text)
         guard let header = rows.first, rows.count > 1 else { throw CSVImportError.empty }
-        let col = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
+        let col = Dictionary(header.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         let missing = ["Description", "Start", "End"].filter { col[$0] == nil }.sorted()
         if !missing.isEmpty { throw CSVImportError.missingColumns(missing) }
 
@@ -105,6 +105,9 @@ public struct CSVImporter {
         return SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Parses a local wall-clock time in `timeZone`. Times inside a DST transition (the repeated
+    /// autumn hour, the skipped spring hour) are resolved by DateFormatter without detection, so
+    /// entries on those days may be off by an hour; accepted for a one-time import.
     private func parseLocal(_ s: String) -> Date? {
         guard !s.isEmpty else { return nil }
         let f = DateFormatter()
