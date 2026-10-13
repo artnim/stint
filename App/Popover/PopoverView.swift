@@ -184,5 +184,6 @@ struct RunningView: View {
             Text(state.projectName(entry.projectId)).font(.caption).foregroundStyle(.secondary)
         }
         .onAppear { text = entry.description }
+        .onChange(of: entry.description) { _, new in text = new }
     }
 }

@@ -32,7 +32,7 @@ struct EntriesView: View {
                 Text(monthTitle).font(.headline).frame(width: 180)
                 Button { shift(1) } label: { Image(systemName: "chevron.right") }
                 Spacer()
-                Button("Add entry today") { state.addEntry(on: Date()); reloadToken += 1 }
+                Button("Add entry") { state.addEntry(on: addDay); reloadToken += 1 }
                 if let err = state.lastError { Text(err).foregroundStyle(.red).font(.caption) }
             }
             .padding(10)
@@ -54,6 +54,14 @@ struct EntriesView: View {
             }
         }
         .onChange(of: state.running) { reloadToken += 1 }
+    }
+
+    /// Today when the current month is shown, otherwise the first day of the shown month.
+    private var addDay: Date {
+        let cal = Calendar.current
+        let now = Date()
+        if cal.component(.year, from: now) == year && cal.component(.month, from: now) == month { return now }
+        return monthRange(year: year, month: month, calendar: cal).start
     }
 
     private var monthTitle: String { "\(Strings.of(.en).months[month]) \(year)" }
@@ -82,12 +90,22 @@ struct EntryRow: View {
         _tagsText = State(initialValue: entry.tags.joined(separator: ", "))
     }
 
+    /// Drops seconds and sub-seconds so hidden precision cannot tip report rounding.
+    private func wholeMinute(_ d: Date) -> Date {
+        Date(timeIntervalSince1970: floor(d.timeIntervalSince1970 / 60) * 60)
+    }
+
+    private func minuteBinding(_ keyPath: WritableKeyPath<Entry, Date>) -> Binding<Date> {
+        Binding(get: { entry[keyPath: keyPath] },
+                set: { entry[keyPath: keyPath] = wholeMinute($0) })
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            DatePicker("", selection: $entry.startUTC, displayedComponents: [.date, .hourAndMinute])
+            DatePicker("", selection: minuteBinding(\.startUTC), displayedComponents: [.date, .hourAndMinute])
                 .labelsHidden().frame(width: 170)
             if entry.endUTC != nil {
-                DatePicker("", selection: Binding(get: { entry.endUTC ?? Date() }, set: { entry.endUTC = $0 }),
+                DatePicker("", selection: Binding(get: { entry.endUTC ?? Date() }, set: { entry.endUTC = wholeMinute($0) }),
                            displayedComponents: [.date, .hourAndMinute])
                     .labelsHidden().frame(width: 170)
             } else {

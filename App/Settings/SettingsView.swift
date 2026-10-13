@@ -22,6 +22,7 @@ struct GeneralSettingsTab: View {
         Form {
             TextField("Your name (shown on reports)", text: $name)
                 .onSubmit { state.userName = name }
+                .onChange(of: name) { state.userName = name }
             LabeledContent("Database") {
                 VStack(alignment: .leading) {
                     Text(AppState.databaseURL.path).textSelection(.enabled).font(.caption)
@@ -49,9 +50,21 @@ struct GeneralSettingsTab: View {
 
     /// Opens (or creates) the database at `url`; the previous file is left where it is.
     private func reopen(_ url: URL) {
+        let existed = FileManager.default.fileExists(atPath: url.path)
+        do {
+            if !existed {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try state.db.backup(to: url)
+            }
+        } catch {
+            dbMessage = "Could not copy the database: \(error)"
+            return
+        }
         do {
             try state.reopen(at: url)
-            dbMessage = "Now using \(url.path). The previous file was not moved."
+            dbMessage = existed
+                ? "Now using \(url.path). The previous file was not moved."
+                : "Copied the current database to \(url.path) and switched to it."
         } catch {
             dbMessage = "Could not open: \(error)"
         }

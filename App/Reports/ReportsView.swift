@@ -13,6 +13,7 @@ private struct ReportRequest: Equatable {
     var clientId: Int64?
     var projectId: Int64?
     var options: ReportOptions
+    var dataVersion: Int
 }
 
 struct ReportsView: View {
@@ -24,7 +25,7 @@ struct ReportsView: View {
         year: Calendar.current.component(.year, from: Date()),
         month: Calendar.current.component(.month, from: Date()),
         useRange: false, from: Date(), to: Date(),
-        clientId: nil, projectId: nil, options: ReportPreset.monthly.options)
+        clientId: nil, projectId: nil, options: ReportPreset.monthly.options, dataVersion: 0)
     @State private var report: Report?
     @State private var pdfData: Data?
     @State private var document: PDFDocument?
@@ -49,9 +50,11 @@ struct ReportsView: View {
             }
         }
         .onAppear {
+            req.dataVersion = state.dataVersion
             presets = PresetStore.load(state.db)
             applyPreset(presetName)
         }
+        .onChange(of: state.dataVersion) { req.dataVersion = state.dataVersion }
         .task(id: req) { generate() }
     }
 
@@ -176,11 +179,13 @@ struct ReportsView: View {
             document = PDFDocument(data: data)
             message = "\(r.entryCount) entries, \(fmtHours(r.totalHours, r.options.language))"
         } catch {
+            report = nil; pdfData = nil; document = nil
             message = "\(error)"
         }
     }
 
     private func export() {
+        generate()
         guard let data = pdfData else { return }
         let p = period
         let panel = NSSavePanel()

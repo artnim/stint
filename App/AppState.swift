@@ -7,6 +7,8 @@ import TimeCore
 final class AppState {
     private(set) var db: AppDatabase
     var running: Entry?
+    /// Bumped on every refresh(); lets views regenerate derived data (e.g. the report PDF).
+    var dataVersion = 0
     var recents: [RecentItem] = []
     var projects: [Project] = []
     var clients: [Client] = []
@@ -62,6 +64,7 @@ final class AppState {
     }
 
     func refresh() {
+        defer { dataVersion += 1 }
         do {
             running = try db.runningEntry()
             recents = try db.recents(limit: 10)
@@ -165,9 +168,12 @@ final class AppState {
     }
 
     func updateRunningDescription(_ text: String) {
-        guard var r = running, r.description != text else { return }
-        r.description = text
-        perform { try db.update(r) }
+        guard let current = running, current.description != text else { return }
+        perform {
+            guard var r = try db.runningEntry() else { return }   // never write a stale in-memory record
+            r.description = text
+            try db.update(r)
+        }
     }
 
     func perform(_ block: () throws -> Void) {
