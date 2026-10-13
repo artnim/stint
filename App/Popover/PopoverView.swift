@@ -12,7 +12,7 @@ struct PopoverView: View {
         @Bindable var state = state
         VStack(alignment: .leading, spacing: 10) {
             if let r = state.running {
-                RunningView(entry: r)
+                RunningView(entry: r).id(r.id)
                 Divider()
             }
             TextField("Search", text: $query).textFieldStyle(.roundedBorder)
@@ -68,17 +68,21 @@ struct PopoverView: View {
     private var newEntryRow: some View {
         HStack {
             TextField("New entry…", text: $newDescription).textFieldStyle(.roundedBorder)
+                .onSubmit { startNew() }
             Picker("", selection: $newProjectId) {
                 Text("No project").tag(Int64?.none)
                 ForEach(state.projects) { p in Text(p.name).tag(Int64?.some(p.id!)) }
             }
             .labelsHidden().frame(width: 130)
-            Button("Start") {
-                state.startNew(description: newDescription, projectId: newProjectId)
-                newDescription = ""
-            }
+            Button("Start") { startNew() }
             .disabled(newDescription.isEmpty && newProjectId == nil)
         }
+    }
+
+    private func startNew() {
+        guard !(newDescription.isEmpty && newProjectId == nil) else { return }
+        state.startNew(description: newDescription, projectId: newProjectId)
+        newDescription = ""
     }
 
     func sectionHeader(_ s: String) -> some View {
@@ -106,7 +110,6 @@ struct RunningView: View {
                 Spacer()
                 Text(state.elapsed(entry)).monospacedDigit().font(.headline)
                 Button("Stop") { state.updateRunningDescription(text); state.stop() }
-                    .keyboardShortcut(.defaultAction)
             }
             Text(state.projectName(entry.projectId)).font(.caption).foregroundStyle(.secondary)
         }

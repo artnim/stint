@@ -47,8 +47,8 @@ final class AppState {
             alert.messageText = "Timetracker cannot open its database"
             alert.informativeText = "\(databaseURL.path)\n\n\(error)"
             alert.runModal()
-            NSApp.terminate(nil)
-            fatalError("unreachable")
+            NSApplication.shared.terminate(nil)
+            exit(1)
         }
     }
 
