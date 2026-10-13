@@ -7,6 +7,7 @@ struct PopoverView: View {
     @State private var query = ""
     @State private var newDescription = ""
     @State private var newProjectId: Int64?
+    @State private var listHeight: CGFloat = 0
 
     var body: some View {
         @Bindable var state = state
@@ -34,8 +35,11 @@ struct PopoverView: View {
                     }
                     issueSections
                 }
+                // A ScrollView has no intrinsic height, and the MenuBarExtra window sizes
+                // itself to the ideal size, so it collapsed to zero. Measure the content instead.
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
             }
-            .frame(maxHeight: 420)
+            .frame(height: min(max(listHeight, 1), 420))
             if let err = state.lastError {
                 Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
             }
