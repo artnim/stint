@@ -1,0 +1,36 @@
+name: Timetracker
+options:
+  bundleIdPrefix: io.artnim
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  TimeCore:
+    path: TimeCore
+targets:
+  Timetracker:
+    type: application
+    platform: macOS
+    sources: [App]
+    dependencies:
+      - package: TimeCore
+        product: TimeCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Timetracker
+        LSUIElement: true
+        NSHumanReadableCopyright: ""
+    entitlements:
+      path: App/Timetracker.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: false
+        PRODUCT_BUNDLE_IDENTIFIER: io.artnim.timetracker
+        MACOSX_DEPLOYMENT_TARGET: "14.0"

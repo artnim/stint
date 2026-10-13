@@ -7,3 +7,4 @@ fixtures/private/
 *.pdf
 !docs/**/*.pdf
 .DS_Store
+build/
