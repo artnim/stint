@@ -77,21 +77,38 @@ final class AppState {
         }
     }
 
+    /// Fetches assigned issues with every configured account and merges them. Issues missing from
+    /// the merged result are closed only when every account succeeded, so one failing token never
+    /// hides another organisation's issues.
     func syncIssues() async {
-        guard let token = KeychainStore.read(KeychainStore.tokenAccount), !token.isEmpty else {
+        let accounts = KeychainStore.githubAccounts()
+        guard !accounts.isEmpty else {
             githubError = "No GitHub token. Add one in Settings → GitHub."
             return
         }
-        do {
-            let issues = try await GitHubClient(token: token).assignedIssues()
-            try IssueSync.apply(issues, to: db)
-            githubError = nil
-            refresh()
-        } catch GitHubError.unauthorized {
-            githubError = "GitHub rejected the token (401). Check Settings → GitHub."
-        } catch {
-            // offline or rate-limited: keep the cache, stay quiet (spec §3)
+        var merged: [GitHubIssue] = []
+        var rejected: [String] = []
+        var failed = 0
+        for account in accounts {
+            do {
+                merged += try await GitHubClient(token: account.token).assignedIssues()
+            } catch GitHubError.unauthorized {
+                rejected.append(account.label)
+                failed += 1
+            } catch {
+                failed += 1   // offline or rate-limited: keep the cache, stay quiet (spec §3)
+            }
         }
+        if failed < accounts.count || !merged.isEmpty {
+            do {
+                try IssueSync.apply(merged, to: db, closeMissing: failed == 0)
+                refresh()
+            } catch {
+                lastError = "\(error)"
+            }
+        }
+        githubError = rejected.isEmpty ? nil
+            : "GitHub rejected the token for \(rejected.joined(separator: ", ")) (401). Check Settings → GitHub."
     }
 
     func startIssue(_ row: IssueRow) {

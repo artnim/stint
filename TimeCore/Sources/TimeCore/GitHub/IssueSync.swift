@@ -2,8 +2,10 @@ import Foundation
 import GRDB
 
 public enum IssueSync {
-    /// Upsert repos (keeping their project mapping) and cache rows; everything not in `issues` is marked closed.
-    public static func apply(_ issues: [GitHubIssue], to db: AppDatabase) throws {
+    /// Upsert repos (keeping their project mapping) and cache rows. With `closeMissing`, every open
+    /// cached issue not in `issues` is marked closed; pass `false` when `issues` is incomplete
+    /// (for example when one of several accounts failed to sync).
+    public static func apply(_ issues: [GitHubIssue], to db: AppDatabase, closeMissing: Bool = true) throws {
         try db.write { db in
             var repoIds: [String: Int64] = [:]
             for r in try Repo.fetchAll(db) { repoIds[r.fullName] = r.id }
@@ -27,6 +29,7 @@ public enum IssueSync {
                     try row.insert(db)
                 }
             }
+            guard closeMissing else { return }
             for var row in try IssueCache.filter(Column("state") == "open").fetchAll(db)
             where !seen.contains("\(row.repoId)/\(row.number)") {
                 row.state = "closed"

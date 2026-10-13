@@ -67,4 +67,16 @@ final class IssueSyncTests: XCTestCase {
         XCTAssertEqual(rows.map { "\($0.projectName ?? "-")/\($0.repo.name)#\($0.issue.number)" },
                        ["Z-Project/zeta#5", "-/alpha#3", "-/alpha#9"])
     }
+
+    func testPartialSyncDoesNotCloseMissingIssues() throws {
+        try IssueSync.apply([issue(1), issue(2, repo: "app")], to: db)
+        // one account failed: apply only what the others returned, close nothing
+        try IssueSync.apply([issue(1, title: "renamed")], to: db, closeMissing: false)
+        let rows = try db.openIssueRows()
+        XCTAssertEqual(rows.map(\.issue.number), [2, 1])
+        XCTAssertEqual(rows.first { $0.issue.number == 1 }?.issue.title, "renamed")
+        // next full sync closes again
+        try IssueSync.apply([issue(1)], to: db, closeMissing: true)
+        XCTAssertEqual(try db.openIssueRows().map(\.issue.number), [1])
+    }
 }
