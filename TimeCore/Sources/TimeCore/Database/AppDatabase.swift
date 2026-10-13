@@ -19,6 +19,13 @@ public final class AppDatabase {
         return try AppDatabase(DatabaseQueue(path: url.path))
     }
 
+    /// Writes a consistent copy of the live database to `url` (VACUUM INTO).
+    public func backup(to url: URL) throws {
+        try writer.writeWithoutTransaction { db in
+            try db.execute(sql: "VACUUM INTO ?", arguments: [url.path])
+        }
+    }
+
     public func read<T>(_ block: (Database) throws -> T) throws -> T {
         try writer.read(block)
     }

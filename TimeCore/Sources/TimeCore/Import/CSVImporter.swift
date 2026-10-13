@@ -59,7 +59,7 @@ public struct CSVImporter {
                 if ["yes", "true", "1"].contains(cell(row, "Break").lowercased()) {
                     result.skippedBreaks += 1; continue
                 }
-                guard let start = parseLocal(cell(row, "Start")), let end = parseLocal(cell(row, "End")) else {
+                guard let start = parseLocal(cell(row, "Start")), let end = parseLocal(cell(row, "End")), end > start else {
                     result.skippedUnfinished += 1; continue
                 }
                 var desc = cell(row, "Description")

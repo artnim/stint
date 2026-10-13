@@ -40,6 +40,23 @@ final class IssueSyncTests: XCTestCase {
         XCTAssertEqual(try db.openIssueRows().map(\.issue.number), [1, 2])
     }
 
+    func testAssigningRepoBackfillsUnassignedEntriesOnly() throws {
+        try IssueSync.apply([issue(1)], to: db)
+        let repo = try db.allRepos()[0]
+        var other = Project(clientId: nil, name: "Other")
+        var target = Project(clientId: nil, name: "Target")
+        try db.write { try other.insert($0); try target.insert($0) }
+        let a = try db.start(description: "a", projectId: nil, repoId: repo.id, at: t0)
+        _ = try db.stopRunning(at: t0.addingTimeInterval(600))
+        let b = try db.start(description: "b", projectId: other.id, repoId: repo.id, at: t0.addingTimeInterval(1200))
+        _ = try db.stopRunning(at: t0.addingTimeInterval(1800))
+        try db.assignRepo(repo.id!, toProject: target.id)
+        let ea = try db.read { try Entry.fetchOne($0, key: a.id!) }
+        let eb = try db.read { try Entry.fetchOne($0, key: b.id!) }
+        XCTAssertEqual(ea?.projectId, target.id)
+        XCTAssertEqual(eb?.projectId, other.id)
+    }
+
     func testRowsAreGroupedByProjectNameThenRepoThenNumber() throws {
         try IssueSync.apply([issue(5, repo: "zeta"), issue(3, repo: "alpha"), issue(9, repo: "alpha")], to: db)
         var p = Project(clientId: nil, name: "Z-Project")

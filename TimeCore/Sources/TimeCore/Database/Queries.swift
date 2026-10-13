@@ -166,6 +166,10 @@ extension AppDatabase {
             guard var repo = try Repo.fetchOne(db, key: repoId) else { return }
             repo.projectId = projectId
             try repo.update(db)
+            if let projectId {
+                try db.execute(sql: "UPDATE entry SET projectId = ? WHERE repoId = ? AND projectId IS NULL",
+                               arguments: [projectId, repoId])
+            }
         }
     }
 }

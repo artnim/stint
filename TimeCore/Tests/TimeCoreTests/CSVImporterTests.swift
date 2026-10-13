@@ -68,6 +68,13 @@ final class CSVImporterTests: XCTestCase {
         XCTAssertEqual(report.meta.client, "mehrere (2)")
     }
 
+    func testEndNotAfterStartCountsAsUnfinished() throws {
+        let text = "Description,Start,End\nbad,2026-08-03 10:00:00,2026-08-03 09:00:00\nzero,2026-08-03 10:00:00,2026-08-03 10:00:00\nok,2026-08-03 09:00:00,2026-08-03 10:00:00\n"
+        let r = try importer.importText(text)
+        XCTAssertEqual(r.imported, 1)
+        XCTAssertEqual(r.skippedUnfinished, 2)
+    }
+
     func testDuplicateHeaderColumnsDoNotCrash() throws {
         let text = "Description,Description,Start,End\nfirst,second,2026-08-03 09:00:00,2026-08-03 10:00:00\n"
         let r = try importer.importText(text)

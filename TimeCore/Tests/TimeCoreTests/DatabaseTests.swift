@@ -18,6 +18,16 @@ final class DatabaseTests: XCTestCase {
         }
     }
 
+    func testBackupCopyContainsData() throws {
+        var c = Client(name: "ACME")
+        try db.write { try c.insert($0) }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("backup-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try db.backup(to: url)
+        let copy = try AppDatabase.open(at: url)
+        XCTAssertEqual(try copy.allClients().map(\.name), ["ACME"])
+    }
+
     func testStartStopRoundTrip() throws {
         let t0 = Date(timeIntervalSince1970: 1_790_000_000)
         let e = try db.start(description: "#12: fix login", projectId: nil, at: t0)
