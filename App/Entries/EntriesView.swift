@@ -68,9 +68,19 @@ struct EntriesView: View {
 
 struct EntryRow: View {
     @Environment(AppState.self) private var state
-    @State var entry: Entry
+    let source: Entry                 // the parent's current DB value
     let onChange: () -> Void
-    @State private var tagsText = ""
+    @State private var entry: Entry
+    @State private var tagsText: String
+    @State private var reverting = false
+    @State private var confirmDelete = false
+
+    init(entry: Entry, onChange: @escaping () -> Void) {
+        source = entry
+        self.onChange = onChange
+        _entry = State(initialValue: entry)
+        _tagsText = State(initialValue: entry.tags.joined(separator: ", "))
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -99,11 +109,23 @@ struct EntryRow: View {
                     Button("Delete", role: .destructive) { state.delete(entry); onChange() }
                 }
         }
-        .onAppear { tagsText = entry.tags.joined(separator: ", ") }
+        .onChange(of: source) { _, new in
+            // external change (timer stopped, edit elsewhere): re-seed without writing back
+            if new != entry {
+                reverting = true
+                entry = new
+            }
+            tagsText = new.tags.joined(separator: ", ")
+        }
         .onChange(of: entry) { _, new in
-            if state.update(new) { onChange() }
+            if reverting { reverting = false; return }
+            if state.update(new) {
+                onChange()
+            } else {
+                // rejected (end must be after start): revert to the DB value, keep the error visible
+                reverting = true
+                entry = source
+            }
         }
     }
-
-    @State private var confirmDelete = false
 }
