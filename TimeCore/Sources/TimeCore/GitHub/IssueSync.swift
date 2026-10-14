@@ -24,12 +24,18 @@ public enum IssueSync {
         let deviceId = db.deviceId
         try db.write { db in
             var repoIds: [String: Int64] = [:]
-            for r in try Repo.filter(Column("deletedAt") == nil).fetchAll(db) { repoIds[r.fullName] = r.id }
+            var tombstoned = Set<Int64>()   // a deleted repo stays deleted: its issues are skipped
+            for r in try Repo.fetchAll(db) {
+                if r.deletedAt == nil { repoIds[r.fullName] = r.id } else { tombstoned.insert(r.id!); repoIds[r.fullName] = -1 }
+            }
             var seen = Set<String>()   // "repoId/number"
             for i in issues {
                 let full = "\(i.repoOwner)/\(i.repoName)"
                 let repoId: Int64
-                if let id = repoIds[full] { repoId = id } else {
+                if let id = repoIds[full] {
+                    if id == -1 { continue }
+                    repoId = id
+                } else {
                     var r = Repo(owner: i.repoOwner, name: i.repoName)
                     try db.syncInsert(&r, deviceId: deviceId, now: Date())
                     repoId = r.id!
@@ -49,7 +55,7 @@ public enum IssueSync {
             }
             guard closeMissing else { return }
             for var row in try IssueCache.filter(Column("state") == "open").fetchAll(db)
-            where !seen.contains("\(row.repoId)/\(row.number)") {
+            where !seen.contains("\(row.repoId)/\(row.number)") && !tombstoned.contains(row.repoId) {
                 row.state = "closed"
                 try row.update(db)
             }

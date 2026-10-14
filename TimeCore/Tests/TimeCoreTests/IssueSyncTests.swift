@@ -127,6 +127,16 @@ final class IssueSyncTests: XCTestCase {
         XCTAssertThrowsError(try db.addRepo(fullName: "Artnim/Website"))
     }
 
+    func testSyncSkipsIssuesOfATombstonedRepo() throws {
+        let repo = try db.addRepo(fullName: "artnim/website")
+        try IssueSync.apply([issue(1)], to: db)
+        try db.delete(repo)
+        try IssueSync.apply([issue(1)], to: db)
+        XCTAssertEqual(try db.allRepos(), [])
+        XCTAssertEqual(try db.read { try Repo.fetchCount($0) }, 1)
+        XCTAssertEqual(try db.pendingOutbox().filter { $0.uuid == repo.uuid }.last?.op, "delete")
+    }
+
     func testPartialSyncDoesNotCloseMissingIssues() throws {
         try IssueSync.apply([issue(1), issue(2, repo: "app")], to: db)
         // one account failed: apply only what the others returned, close nothing
