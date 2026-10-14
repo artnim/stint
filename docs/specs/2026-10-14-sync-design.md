@@ -147,6 +147,17 @@ projects, repos and settings are never pruned. A pruned entry that is edited on 
 comes back to the phone with that edit and is pruned again at the next cycle, which is
 harmless.
 
+### R16 Natural keys merge by uuid order
+
+Two devices can create "the same" row independently: a repository with the same owner and
+name, or an entry with the same import key. These rows are identified by a natural key
+that is unique on every device, so two uuids for one key must collapse into one. When a
+remote row arrives whose natural key matches a local row with a different uuid, the row
+with the lexically smaller uuid survives on every device: the local row is re-pointed to
+the surviving uuid (keeping its local id, so children stay attached) and the other uuid is
+deleted on the server. Both devices apply the same rule, so they converge without talking.
+Fields follow R3 between the two candidates.
+
 ### R15 Month total on the phone
 
 The phone's Stint screen shows the current month's total: the sum of the raw durations of
