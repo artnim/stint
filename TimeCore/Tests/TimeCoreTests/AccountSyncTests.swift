@@ -19,6 +19,7 @@ final class AccountSyncTests: XCTestCase {
             db: db, closedSince: since,
             makeClient: { token in GitHubClient(token: token, transport: token == "A" ? transportGood : transportBad) })
         XCTAssertEqual(outcome.rejectedLabels, ["org-b"])
+        XCTAssertEqual(outcome.failed, 1)
         XCTAssertTrue(outcome.applied)
         XCTAssertEqual(try db.openIssueRows().map(\.issue.number).sorted(), [42, 101])
     }

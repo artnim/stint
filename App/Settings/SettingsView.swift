@@ -21,8 +21,8 @@ struct GeneralSettingsTab: View {
     var body: some View {
         Form {
             TextField("Your name (shown on reports)", text: $name)
-                .onSubmit { state.userName = name }
-                .onChange(of: name) { state.userName = name }
+                .onSubmit { if name != state.userName { state.userName = name } }
+                .onChange(of: name) { if name != state.userName { state.userName = name } }
             LabeledContent("Database") {
                 VStack(alignment: .leading) {
                     Text(AppState.databaseURL.path).textSelection(.enabled).font(.caption)

@@ -14,6 +14,7 @@ final class MobileState {
     var issueRows: [IssueRow] = []
     var allIssueRows: [IssueRow] = []
     var monthTotal: Double = 0
+    private var finishedMonthHours: Double = 0
     var now = Date()
     var lastError: String?
     var githubError: String?
@@ -33,7 +34,7 @@ final class MobileState {
         Self.shared = self
         refresh()
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.now = Date(); self?.monthTotal = (try? self?.db.monthTotalHours(now: Date(), calendar: .current)) ?? 0 }
+            Task { @MainActor in self?.tick() }
         }
         NotificationCenter.default.addObserver(forName: CloudKitTransport.accountChangedNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.syncNow(reason: "account changed") }
@@ -48,8 +49,17 @@ final class MobileState {
             repos = try db.allRepos()
             issueRows = try db.openIssueRows()
             allIssueRows = try db.searchIssueRows(closedSince: Date().addingTimeInterval(-30 * 86400))
-            monthTotal = try db.monthTotalHours(now: Date(), calendar: .current)
+            let n = Date()
+            let total = try db.monthTotalHours(now: n, calendar: .current)
+            finishedMonthHours = total - (running.map { max(0, n.timeIntervalSince($0.startUTC)) / 3600 } ?? 0)
+            now = n
+            monthTotal = total
         } catch { lastError = "\(error)" }
+    }
+
+    private func tick() {
+        now = Date()
+        monthTotal = finishedMonthHours + (running.map { max(0, now.timeIntervalSince($0.startUTC)) / 3600 } ?? 0)
     }
 
     var userName: String {

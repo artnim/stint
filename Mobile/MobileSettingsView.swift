@@ -12,7 +12,7 @@ struct MobileSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Reports") { TextField("Your name", text: $name).onChange(of: name) { state.userName = name } }
+                Section("Reports") { TextField("Your name", text: $name).onChange(of: name) { if name != state.userName { state.userName = name } } }
                 Section("iCloud sync") {
                     Text(state.syncStatus).font(.caption)
                     Button("Sync now") { Task { await state.syncNow(reason: "manual") } }

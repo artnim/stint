@@ -4,6 +4,7 @@ import TimeCore
 struct MobileEntriesView: View {
     @Environment(MobileState.self) private var state
     @State private var reload = 0
+    @State private var pendingDelete: [Entry]?
 
     private struct DayGroup: Identifiable { let day: Day; let entries: [Entry]; var id: Day { day } }
     private var days: [DayGroup] {
@@ -35,12 +36,18 @@ struct MobileEntriesView: View {
                                 }
                             }
                         }
-                        .onDelete { offsets in offsets.map { entries[$0] }.forEach(state.delete); reload += 1 }
+                        .onDelete { offsets in pendingDelete = offsets.map { entries[$0] } }
                     }
                 }
             }
             .navigationTitle("Entries")
             .onChange(of: state.running) { reload += 1 }
+            .confirmationDialog("Delete entry?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+                                titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    pendingDelete?.forEach(state.delete); pendingDelete = nil; reload += 1
+                }
+            }
         }
     }
 }
@@ -68,7 +75,7 @@ struct EntryEditor: View {
         }
         .navigationTitle("Entry")
         .toolbar { Button("Save") { save() } }
-        .onAppear { tags = entry.tags.joined(separator: ", ") }
+        .onAppear { tags = entry.tags.joined(separator: ", "); state.lastError = nil }
     }
 
     private func save() {
