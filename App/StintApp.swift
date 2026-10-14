@@ -9,7 +9,8 @@ struct StintApp: App {
         MenuBarExtra {
             PopoverView().environment(state)
         } label: {
-            Label(state.menuTitle, systemImage: state.running == nil ? "clock" : "timer")
+            // template image from Assets.xcassets (ring + stint arc); the elapsed time shows a running timer
+            Label { Text(state.menuTitle) } icon: { Image("MenuBarIcon") }
                 .labelStyle(.titleAndIcon)
         }
         .menuBarExtraStyle(.window)
