@@ -75,6 +75,21 @@ final class GitHubClientTests: XCTestCase {
         XCTAssertEqual(issues.count, 4)
     }
 
+    func testClosedSinceQueriesAreBuiltForBothEndpoints() async throws {
+        let since = Date(timeIntervalSince1970: 1_791_619_200)   // 2026-10-10T08:00:00Z
+        let assignedURL = "https://api.github.com/issues?filter=assigned&state=closed&since=2026-10-10T08:00:00Z&per_page=100"
+        let repoURL = "https://api.github.com/repos/artnim/app/issues?state=closed&since=2026-10-10T08:00:00Z&per_page=100"
+        let transport = FakeTransport(responses: [
+            assignedURL: (200, try fixture("github-issues-page2"), [:]),
+            repoURL: (200, try fixture("github-repo-issues"), [:]),
+        ])
+        let client = GitHubClient(token: "tok", transport: transport)
+        let assigned = try await client.assignedIssues(state: "closed", since: since)
+        let listed = try await client.repoIssues(owner: "artnim", name: "app", state: "closed", since: since)
+        XCTAssertEqual(assigned.map(\.number), [7])
+        XCTAssertEqual(listed.map(\.number), [200, 201])
+    }
+
     func testRepoIssuesHTTPError() async {
         let base = "https://api.github.com/repos/artnim/app/issues?state=open&per_page=100"
         let transport = FakeTransport(responses: [base: (404, Data("{}".utf8), [:])])

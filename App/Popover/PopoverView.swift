@@ -95,6 +95,9 @@ struct PopoverView: View {
                                 .foregroundStyle(.secondary)
                             Text("#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
                             Text(row.issue.title).lineLimit(1)
+                            if row.issue.state == "closed" {
+                                Text("closed").font(.caption2).foregroundStyle(.tertiary)
+                            }
                             if !row.issue.assignedToMe {
                                 Text("unassigned").font(.caption2).foregroundStyle(.tertiary)
                             }
@@ -128,7 +131,8 @@ struct PopoverView: View {
     }
 
     /// Mapped projects first (as `openIssueRows` orders them), then one "Unmapped" group.
-    /// Without a query only issues assigned to you; a query searches every cached open issue.
+    /// Without a query only open issues assigned to you; a query searches every cached open issue
+    /// plus those closed in the last 30 days.
     private var groupedIssues: [IssueGroup] {
         let q = query.lowercased()
         let rows = q.isEmpty ? state.issueRows : state.allIssueRows.filter {

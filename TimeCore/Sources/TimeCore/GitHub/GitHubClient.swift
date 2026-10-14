@@ -49,22 +49,31 @@ public struct GitHubClient {
         self.token = token; self.transport = transport; self.baseURL = baseURL
     }
 
-    /// Open issues and PRs assigned to the token's user, across every repo the token can see.
-    public func assignedIssues() async throws -> [GitHubIssue] {
-        let url = baseURL.appending(path: "issues")
-            .appending(queryItems: [.init(name: "filter", value: "assigned"),
-                                    .init(name: "state", value: "open"),
-                                    .init(name: "per_page", value: "100")])
-        return try await fetchPages(from: url, maxPages: Int.max, defaultRepo: nil)
+    /// Issues and PRs assigned to the token's user, across every repo the token can see.
+    /// `since` limits to items updated after that instant (GitHub's `since` parameter).
+    public func assignedIssues(state: String = "open", since: Date? = nil) async throws -> [GitHubIssue] {
+        var items: [URLQueryItem] = [.init(name: "filter", value: "assigned"), .init(name: "state", value: state)]
+        if let since { items.append(.init(name: "since", value: Self.iso(since))) }
+        items.append(.init(name: "per_page", value: "100"))
+        return try await fetchPages(from: baseURL.appending(path: "issues").appending(queryItems: items),
+                                    maxPages: Int.max, defaultRepo: nil)
     }
 
-    /// All open issues and PRs of one repo (newest first), whether assigned or not,
-    /// capped at `maxPages` × 100. Items carry `assignedToMe == false`.
-    public func repoIssues(owner: String, name: String, maxPages: Int = 5) async throws -> [GitHubIssue] {
-        let url = baseURL.appending(path: "repos/\(owner)/\(name)/issues")
-            .appending(queryItems: [.init(name: "state", value: "open"),
-                                    .init(name: "per_page", value: "100")])
-        return try await fetchPages(from: url, maxPages: maxPages, defaultRepo: (owner, name))
+    /// Issues and PRs of one repo (newest first), whether assigned or not, capped at
+    /// `maxPages` × 100. Items carry `assignedToMe == false`.
+    public func repoIssues(owner: String, name: String, state: String = "open", since: Date? = nil,
+                           maxPages: Int = 5) async throws -> [GitHubIssue] {
+        var items: [URLQueryItem] = [.init(name: "state", value: state)]
+        if let since { items.append(.init(name: "since", value: Self.iso(since))) }
+        items.append(.init(name: "per_page", value: "100"))
+        return try await fetchPages(from: baseURL.appending(path: "repos/\(owner)/\(name)/issues").appending(queryItems: items),
+                                    maxPages: maxPages, defaultRepo: (owner, name))
+    }
+
+    private static func iso(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.string(from: date)
     }
 
     private func fetchPages(from start: URL, maxPages: Int,

@@ -93,6 +93,21 @@ final class IssueSyncTests: XCTestCase {
         XCTAssertEqual(try db.openIssueRows().map(\.issue.number), [1, 3])
     }
 
+    func testSearchRowsIncludeRecentlyClosedButOpenRowsDoNot() throws {
+        var recent = issue(5, title: "closed last week")
+        recent.state = "closed"; recent.updatedAt = t0.addingTimeInterval(-7 * 86400); recent.assignedToMe = false
+        var old = issue(6, title: "closed long ago")
+        old.state = "closed"; old.updatedAt = t0.addingTimeInterval(-60 * 86400); old.assignedToMe = false
+        var unassignedOpen = issue(7, title: "open, not mine")
+        unassignedOpen.assignedToMe = false
+        try IssueSync.apply([issue(1), recent, old, unassignedOpen], to: db)
+
+        XCTAssertEqual(try db.openIssueRows().map(\.issue.number), [1])
+        let search = try db.searchIssueRows(closedSince: t0.addingTimeInterval(-30 * 86400))
+        XCTAssertEqual(search.map(\.issue.number), [1, 7, 5])      // open first, then closed
+        XCTAssertEqual(search.map(\.issue.state), ["open", "open", "closed"])
+    }
+
     func testAddRepoParsesFullNameAndRejectsDuplicates() throws {
         let repo = try db.addRepo(fullName: " Artnim/Website ")
         XCTAssertEqual(repo.fullName, "Artnim/Website")

@@ -17,7 +17,10 @@ final class AppState {
     var staleRunning: Entry?
     var lastError: String?
     var issueRows: [IssueRow] = []          // assigned to me (popover default)
-    var allIssueRows: [IssueRow] = []       // every open issue of tracked repos (popover search)
+    var allIssueRows: [IssueRow] = []       // every open issue of tracked repos + recently closed (popover search)
+
+    /// Closed issues stay searchable for this long, so time can be booked on something just closed.
+    static var closedSearchCutoff: Date { Date().addingTimeInterval(-30 * 86400) }
     var githubError: String?
 
     private var ticker: Timer?
@@ -73,7 +76,7 @@ final class AppState {
             clients = try db.allClients()
             repos = try db.allRepos()
             issueRows = try db.openIssueRows()
-            allIssueRows = try db.openIssueRows(assignedOnly: false)
+            allIssueRows = try db.searchIssueRows(closedSince: Self.closedSearchCutoff)
         } catch {
             lastError = "\(error)"
         }
@@ -89,12 +92,15 @@ final class AppState {
             githubError = "No GitHub token. Add one in Settings → GitHub."
             return
         }
+        let cutoff = Self.closedSearchCutoff
         var assigned: [GitHubIssue] = []
         var rejected: [String] = []
         var failed = 0
         for account in accounts {
             do {
-                assigned += try await GitHubClient(token: account.token).assignedIssues()
+                let client = GitHubClient(token: account.token)
+                assigned += try await client.assignedIssues()
+                assigned += try await client.assignedIssues(state: "closed", since: cutoff)
             } catch GitHubError.unauthorized {
                 rejected.append(account.label)
                 failed += 1
@@ -108,7 +114,10 @@ final class AppState {
             var fetched = false
             for account in usable {
                 do {
-                    listed += try await GitHubClient(token: account.token).repoIssues(owner: repo.owner, name: repo.name)
+                    let client = GitHubClient(token: account.token)
+                    listed += try await client.repoIssues(owner: repo.owner, name: repo.name)
+                    listed += try await client.repoIssues(owner: repo.owner, name: repo.name,
+                                                          state: "closed", since: cutoff, maxPages: 2)
                     fetched = true
                     break
                 } catch GitHubError.http(let code) where code == 403 || code == 404 {

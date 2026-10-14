@@ -146,18 +146,28 @@ public struct IssueRow: Equatable, Identifiable {
 extension AppDatabase {
     /// Open cached issues, mapped repos first (by project name), then unmapped; within a group by repo name and number.
     public func openIssueRows(assignedOnly: Bool = true) throws -> [IssueRow] {
+        var request = IssueCache.filter(Column("state") == "open")
+        if assignedOnly { request = request.filter(Column("assignedToMe") == true) }
+        return try issueRows(request)
+    }
+
+    /// Everything the popover search covers: all open issues plus those closed (updated) after `closedSince`.
+    /// Within a project and repo, open issues come before closed ones.
+    public func searchIssueRows(closedSince: Date) throws -> [IssueRow] {
+        try issueRows(IssueCache.filter(Column("state") == "open" || Column("updatedAt") >= closedSince))
+    }
+
+    private func issueRows(_ request: QueryInterfaceRequest<IssueCache>) throws -> [IssueRow] {
         try read { db in
             let repos = Dictionary(uniqueKeysWithValues: try Repo.fetchAll(db).map { ($0.id!, $0) })
             let projects = Dictionary(uniqueKeysWithValues: try Project.fetchAll(db).map { ($0.id!, $0) })
-            var request = IssueCache.filter(Column("state") == "open")
-            if assignedOnly { request = request.filter(Column("assignedToMe") == true) }
             let rows = try request.fetchAll(db).map { i -> IssueRow in
                 let repo = repos[i.repoId]!
                 return IssueRow(issue: i, repo: repo, projectName: repo.projectId.flatMap { projects[$0]?.name })
             }
             return rows.sorted {
-                let a = ($0.projectName == nil ? 1 : 0, $0.projectName ?? "", $0.repo.fullName, $0.issue.number)
-                let b = ($1.projectName == nil ? 1 : 0, $1.projectName ?? "", $1.repo.fullName, $1.issue.number)
+                let a = ($0.projectName == nil ? 1 : 0, $0.projectName ?? "", $0.repo.fullName, $0.issue.state == "closed" ? 1 : 0, $0.issue.number)
+                let b = ($1.projectName == nil ? 1 : 0, $1.projectName ?? "", $1.repo.fullName, $1.issue.state == "closed" ? 1 : 0, $1.issue.number)
                 return a < b
             }
         }
