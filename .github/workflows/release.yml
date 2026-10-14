@@ -6,6 +6,7 @@ name: Release
 # Repository secrets:
 #   MACOS_CERT_P12_BASE64        Developer ID Application identity (.p12), base64
 #   MACOS_CERT_PASSWORD          password of that .p12
+#   MACOS_PROVISIONING_PROFILE_BASE64  "Stint Developer ID" provisioning profile, base64
 #   APP_STORE_CONNECT_KEY_P8     App Store Connect API key (.p8 contents)
 #   APP_STORE_CONNECT_KEY_ID     its key ID
 #   APP_STORE_CONNECT_ISSUER_ID  its issuer ID
@@ -56,6 +57,17 @@ jobs:
           rm "$RUNNER_TEMP/cert.p12"
           security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "Developer ID Application" \
             || { echo "no Developer ID Application identity in the .p12" >&2; exit 1; }
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.MACOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$dir"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/stint.provisionprofile"
+          uuid=$(security cms -D -i "$RUNNER_TEMP/stint.provisionprofile" | plutil -extract UUID raw -o - -)
+          mv "$RUNNER_TEMP/stint.provisionprofile" "$dir/$uuid.provisionprofile"
 
       - name: Build, sign, notarize, staple
         env:

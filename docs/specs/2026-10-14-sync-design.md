@@ -1,7 +1,7 @@
 # Sync and iPhone companion — design
 
 Date: 2026-10-14
-Status: approved (assumptions confirmed, open points decided 2026-10-14)
+Status: implemented; two-device verification pending (2026-10-14)
 
 ## Goal
 

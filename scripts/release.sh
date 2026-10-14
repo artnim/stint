@@ -25,6 +25,15 @@ APP=$DERIVED/Build/Products/Release/Stint.app
 DIST=dist
 ZIP="$DIST/Stint-$VERSION.zip"
 
+PROFILE_FOUND=0
+for f in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile; do
+  [ -e "$f" ] || continue
+  [ "$(security cms -D -i "$f" 2>/dev/null | plutil -extract Name raw -o - - 2>/dev/null)" = "Stint Developer ID" ] \
+    && { PROFILE_FOUND=1; break; }
+done
+[ "$PROFILE_FOUND" = 1 ] \
+  || { echo "no provisioning profile named 'Stint Developer ID' installed; see README -> Release build" >&2; exit 1; }
+
 echo "==> generating project"
 xcodegen generate --quiet
 

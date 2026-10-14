@@ -81,6 +81,25 @@ the app copies the current database to the new place. If you put it on a synced 
 
 The GitHub tokens are in the login Keychain, never in the database.
 
+## Sync and iPhone
+
+Stint syncs between your Macs and an iPhone through your own iCloud account. Nothing
+goes through a server of mine; the data sits in the CloudKit private database, in a
+custom zone, and only you can read it. Entries, clients, projects, repository mappings
+and report presets sync. Saves use CloudKit change tags: a push that hits a record
+changed on the server in the meantime is retried after the next pull.
+
+- **Conflicts.** Per row, the last writer wins. Deletions win over edits.
+- **One running stint.** If two devices start a timer, the later start wins and the
+  earlier one is booked up to that moment.
+- **The phone keeps three months.** The current month plus the two before it. Older
+  entries are pruned from the phone only; the Mac and CloudKit keep everything. The
+  phone's month total is exact and unrounded.
+- **GitHub tokens** travel through iCloud Keychain, so you add them once.
+- **Status.** Settings shows the sync status line and a "Sync now" button.
+
+The iPhone app is installed from Xcode (scheme `StintMobile`) or from TestFlight.
+
 ## Development
 
 The logic lives in the Swift package `TimeCore` (storage, rounding, report model, PDF
@@ -91,8 +110,9 @@ rendering, CSV import, GitHub client); `App/` is a thin SwiftUI layer on top. Te
 One test is environment-gated: `docs/parity.md` describes how the report was verified
 against an independent reference implementation. Design notes are in `docs/design.md`.
 
-Building needs an Apple developer team for the iCloud entitlement. Contributors without one can
-build with `xcodebuild ... CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO`; sync then stays off.
+The Debug configuration signs automatically with the team, because the iCloud entitlement
+needs a real identity. Contributors without a team can build with
+`xcodebuild ... CODE_SIGNING_ALLOWED=NO`, which skips signing; sync is then off.
 
 ### Release build
 
@@ -108,16 +128,38 @@ keychain):
 
 `scripts/release.sh --no-notarize` builds and signs without Apple credentials. The version
 comes from `MARKETING_VERSION` in `project.yml`; the build number is the commit count.
+The script stops early unless a provisioning profile named `Stint Developer ID` is
+installed.
+
+Release builds use the CloudKit production environment, so before the first release that
+syncs, do these once:
+
+1. In the developer portal, create the iCloud container `iCloud.io.artnim.stint` and enable
+   iCloud (CloudKit) and Push Notifications on the App IDs `io.artnim.stint` and
+   `io.artnim.stint.ios`.
+2. Create a Developer ID provisioning profile named exactly `Stint Developer ID` for
+   `io.artnim.stint`, download it and install it (double-click).
+3. Export it and store it as a repository secret:
+
+       p=$(for f in ~/Library/MobileDevice/Provisioning\ Profiles/*.provisionprofile; do
+         [ "$(security cms -D -i "$f" | plutil -extract Name raw -o - -)" = "Stint Developer ID" ] && echo "$f"; done | tail -1)
+       base64 -i "$p" | gh secret set MACOS_PROVISIONING_PROFILE_BASE64 --repo artnim/stint
+
+4. In the CloudKit Console, open the container, Schema, and choose Deploy Schema Changes to
+   Production, after the development schema has all five record types (the first sync
+   creates them). Without this a release build cannot sync.
+5. Tag the release.
 
 ### Release via GitHub Actions
 
 Pushing a tag `vX.Y.Z` that matches `MARKETING_VERSION` runs `.github/workflows/release.yml`:
 tests, a signed and notarized build via `scripts/release.sh`, and a GitHub release with
-the zip. It needs five repository secrets: `MACOS_CERT_P12_BASE64` and
+the zip. It needs six repository secrets: `MACOS_CERT_P12_BASE64` and
 `MACOS_CERT_PASSWORD` (the Developer ID Application identity exported from Keychain
 Access), and `APP_STORE_CONNECT_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`,
 `APP_STORE_CONNECT_ISSUER_ID` (an App Store Connect API key with the Developer role,
-used by `notarytool`).
+used by `notarytool`), and `MACOS_PROVISIONING_PROFILE_BASE64` (the `Stint Developer ID`
+profile, see above).
 
     git tag v0.1.0 && git push origin v0.1.0
 
