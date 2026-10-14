@@ -204,8 +204,11 @@ extension AppDatabase {
         guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { throw RepoError.invalidName(fullName) }
         let (owner, name) = (String(parts[0]), String(parts[1]))
         return try write { db in
-            if try Repo.filter(Column("owner") == owner && Column("name") == name && Column("deletedAt") == nil).fetchCount(db) > 0 {
-                throw RepoError.duplicate("\(owner)/\(name)")
+            if var existing = try Repo.filter(Column("owner") == owner && Column("name") == name).fetchOne(db) {
+                guard existing.deletedAt != nil else { throw RepoError.duplicate("\(owner)/\(name)") }
+                existing.deletedAt = nil
+                try db.syncUpdate(&existing, deviceId: deviceId, now: Date())
+                return existing
             }
             var r = Repo(owner: owner, name: name)
             try db.syncInsert(&r, deviceId: deviceId, now: Date())

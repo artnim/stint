@@ -49,9 +49,9 @@ public struct CSVImporter {
         try database.write { db in
             var clientIds: [String: Int64] = [:]
             var projectIds: [String: Int64] = [:]   // "client\u{0}project"
-            for c in try Client.fetchAll(db) { clientIds[c.name] = c.id }
-            for p in try Project.fetchAll(db) {
-                let cname = try p.clientId.flatMap { try Client.fetchOne(db, key: $0) }?.name ?? ""
+            for c in try Client.filter(Column("deletedAt") == nil).fetchAll(db) { clientIds[c.name] = c.id }
+            for p in try Project.filter(Column("deletedAt") == nil).fetchAll(db) {
+                let cname = try p.clientId.flatMap { try Client.filter(Column("deletedAt") == nil).filter(key: $0).fetchOne(db) }?.name ?? ""
                 projectIds["\(cname)\u{0}\(p.name)"] = p.id
             }
 

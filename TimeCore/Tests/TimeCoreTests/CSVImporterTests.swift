@@ -29,6 +29,15 @@ final class CSVImporterTests: XCTestCase {
         XCTAssertNotNil(entries[0].importedKey)
     }
 
+    func testImportIgnoresTombstonedClients() throws {
+        var old = Client(name: "ACME"); try db.insert(&old)
+        try db.delete(old)
+        _ = try importer.importFile(at: fixture)
+        let acmes = try db.allClients().filter { $0.name == "ACME" }
+        XCTAssertEqual(acmes.count, 1)
+        XCTAssertNotEqual(acmes[0].uuid, old.uuid)
+    }
+
     func testCreatesClientsAndProjects() throws {
         _ = try importer.importFile(at: fixture)
         XCTAssertEqual(try db.allClients().map(\.name), ["ACME", "Globex"])
