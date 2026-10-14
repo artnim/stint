@@ -1,0 +1,174 @@
+import XCTest
+import GRDB
+@testable import TimeCore
+
+final class SyncEngineTests: XCTestCase {
+    let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+    var server: InMemorySyncServer!
+    var a: (db: AppDatabase, engine: SyncEngine)!
+    var b: (db: AppDatabase, engine: SyncEngine)!
+
+    override func setUpWithError() throws {
+        server = InMemorySyncServer()
+        a = try makeDevice(server)
+        b = try makeDevice(server)
+    }
+
+    private func seedA() throws -> (Client, Project, Repo, Entry) {
+        var c = Client(name: "ACME"); try a.db.insert(&c)
+        var p = Project(clientId: c.id, name: "Web"); try a.db.insert(&p)
+        let r = try a.db.addRepo(fullName: "acme/web")
+        try a.db.assignRepo(r.id!, toProject: p.id)
+        try a.db.start(description: "#1: login", projectId: p.id, repoId: r.id, issueNumber: 1, tags: ["x"], at: t0)
+        let e = try a.db.stopRunning(at: t0.addingTimeInterval(1800))!
+        return (c, p, try a.db.allRepos()[0], e)
+    }
+
+    // R1, R2, R6, R12: everything created on A appears on B with references resolved and the outbox drained.
+    func testInsertsFlowAcrossDevices() async throws {
+        let (c, p, r, e) = try seedA()
+        let s1 = try await a.engine.sync()
+        XCTAssertEqual(s1.pushed, 4)
+        XCTAssertEqual(try a.db.pendingOutbox(), [])
+        let s2 = try await b.engine.sync()
+        XCTAssertEqual(s2.pulled, 4)
+        let bc = try b.db.allClients()[0], bp = try b.db.allProjects()[0], br = try b.db.allRepos()[0]
+        let be = try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400))[0]
+        XCTAssertEqual(bc.uuid, c.uuid); XCTAssertEqual(bp.uuid, p.uuid); XCTAssertEqual(br.uuid, r.uuid); XCTAssertEqual(be.uuid, e.uuid)
+        XCTAssertEqual(bp.clientId, bc.id); XCTAssertEqual(br.projectId, bp.id)
+        XCTAssertEqual(be.projectId, bp.id); XCTAssertEqual(be.repoId, br.id)
+        XCTAssertEqual(be.tags, ["x"]); XCTAssertEqual(be.modifiedBy, a.db.deviceId)
+        XCTAssertEqual(try b.db.pendingOutbox(), [], "remote-applied rows are not logged")
+    }
+
+    // R3: the later stamp wins regardless of sync order.
+    func testLaterEditWins() async throws {
+        var (_, p, _, _) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var pb = try b.db.allProjects()[0]
+        try edit(b.db, &pb, at: t0.addingTimeInterval(20)) { $0.name = "from B" }
+        try edit(a.db, &p, at: t0.addingTimeInterval(10)) { $0.name = "from A" }
+        _ = try await b.engine.sync(); _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        XCTAssertEqual(try a.db.allProjects()[0].name, "from B")
+        XCTAssertEqual(try b.db.allProjects()[0].name, "from B")
+
+        // the other order: A is later this time, and A pushes last
+        try edit(b.db, &pb, at: t0.addingTimeInterval(30)) { $0.name = "B again" }
+        try edit(a.db, &p, at: t0.addingTimeInterval(40)) { $0.name = "A again" }
+        _ = try await b.engine.sync(); _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        XCTAssertEqual(try a.db.allProjects()[0].name, "A again")
+        XCTAssertEqual(try b.db.allProjects()[0].name, "A again")
+    }
+
+    // R3 tie-break: equal stamps, the higher device id wins on both sides.
+    func testTieBreakByDeviceId() async throws {
+        var (_, p, _, _) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var pb = try b.db.allProjects()[0]
+        let t = Date().addingTimeInterval(3600)   // edits must be newer than the real-clock seed stamps
+        try edit(a.db, &p, at: t) { $0.name = "A" }
+        try edit(b.db, &pb, at: t) { $0.name = "B" }
+        _ = try await a.engine.sync(); _ = try await b.engine.sync(); _ = try await a.engine.sync()
+        let winner = a.db.deviceId > b.db.deviceId ? "A" : "B"
+        XCTAssertEqual(try a.db.allProjects()[0].name, winner)
+        XCTAssertEqual(try b.db.allProjects()[0].name, winner)
+    }
+
+    // R4: a deletion on A beats a later edit on B.
+    func testRemoteDeleteBeatsLocalEdit() async throws {
+        let (_, _, _, e) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var eb = try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400))[0]
+        try tombstone(a.db, e, at: t0.addingTimeInterval(10))
+        try edit(b.db, &eb, at: t0.addingTimeInterval(20)) { $0.description = "edited after delete" }
+        _ = try await a.engine.sync()                      // deletion reaches the server
+        _ = try await b.engine.sync()                      // B pulls the deletion before pushing its edit
+        XCTAssertEqual(try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)), [])
+        XCTAssertEqual(try a.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)), [])
+        let names = await server.records().keys.map(\.name)
+        XCTAssertFalse(names.contains(e.uuid))
+    }
+
+    // R4: a local pending deletion survives an incoming edit.
+    func testLocalDeleteBeatsRemoteEdit() async throws {
+        let (_, _, _, e) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var eb = try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400))[0]
+        try edit(b.db, &eb, at: t0.addingTimeInterval(20)) { $0.description = "edit" }
+        _ = try await b.engine.sync()                      // edit is on the server
+        try tombstone(a.db, e, at: t0.addingTimeInterval(10))   // A deletes offline, with an older stamp
+        _ = try await a.engine.sync()                      // pulls the edit, keeps the tombstone, pushes the delete
+        _ = try await b.engine.sync()
+        XCTAssertEqual(try a.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)), [])
+        XCTAssertEqual(try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)), [])
+    }
+
+    // R5 / Review Focus 3: a failed push keeps the outbox; the next cycle delivers.
+    func testOutboxSurvivesFailedPush() async throws {
+        _ = try seedA()
+        await server.setFailNext(true)
+        do { _ = try await a.engine.sync(); XCTFail("expected failure") } catch {}
+        XCTAssertEqual(try a.db.pendingOutbox().count, 6)   // client, project, repo x2 (add, assign), entry x2 (start, stop)
+        let s = try await a.engine.sync()
+        XCTAssertEqual(s.pushed, 4)
+        XCTAssertEqual(try a.db.pendingOutbox(), [])
+    }
+
+    // R6: pull before push.
+    func testPullHappensBeforePush() async throws {
+        let spy = SpyTransport(server)
+        let db = try AppDatabase.inMemory()
+        var c = Client(name: "x"); try db.insert(&c)
+        _ = try await SyncEngine(database: db, transport: spy).sync()
+        let calls = await spy.calls
+        XCTAssertEqual(calls, ["fetch", "save"])
+    }
+
+    // R9: replaying a batch changes nothing and logs nothing.
+    func testReplayIsIdempotent() async throws {
+        _ = try seedA()
+        _ = try await a.engine.sync()
+        let changes = try await server.fetchChanges(since: nil)
+        _ = try await b.engine.apply(changes)
+        let before = try b.db.read { try Row.fetchAll($0, sql: "SELECT uuid, modifiedAt, name FROM project") }
+        let again = try await b.engine.apply(changes)
+        XCTAssertEqual(again.pulled, 0)
+        XCTAssertEqual(try b.db.read { try Row.fetchAll($0, sql: "SELECT uuid, modifiedAt, name FROM project") }, before)
+        XCTAssertEqual(try b.db.pendingOutbox(), [])
+    }
+
+    // R8: a child whose parent was deleted before B ever synced gets a null reference.
+    func testMissingParentGetsNullReference() async throws {
+        let (c, _, _, _) = try seedA()
+        _ = try await a.engine.sync()
+        try a.db.delete(c)
+        _ = try await a.engine.sync()
+        _ = try await b.engine.sync()
+        XCTAssertEqual(try b.db.allClients(), [])
+        XCTAssertNil(try b.db.allProjects()[0].clientId)
+    }
+
+    // Settings sync per key by LWW; local keys never travel.
+    func testSettingsSync() async throws {
+        try a.db.setSetting("userName", "Martin")
+        try a.db.setSetting("databasePath", "/local")
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        XCTAssertEqual(try b.db.setting("userName"), "Martin")
+        XCTAssertNil(try b.db.setting("databasePath"))
+        try await Task.sleep(nanoseconds: 5_000_000)   // GRDB stores dates at ms precision; two real-clock writes must not tie
+        try b.db.setSetting("userName", "M. Hans")
+        _ = try await b.engine.sync(); _ = try await a.engine.sync()
+        XCTAssertEqual(try a.db.setting("userName"), "M. Hans")
+    }
+
+    // The token advances only with a committed apply and is per device.
+    func testTokenIsStoredPerDevice() async throws {
+        _ = try seedA()
+        _ = try await a.engine.sync()
+        XCTAssertNotNil(try a.db.setting(SyncEngine.tokenKey))
+        XCTAssertNil(try b.db.setting(SyncEngine.tokenKey))
+        _ = try await b.engine.sync()
+        let s = try await b.engine.sync()
+        XCTAssertEqual(s.pulled, 0)
+    }
+}
