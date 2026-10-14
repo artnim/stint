@@ -30,8 +30,8 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
     let database: CKDatabase
     let zoneID: CKRecordZone.ID
     private let appDatabase: AppDatabase
-    /// Unsynchronised on purpose: `SyncEngine` is an actor with single-flight cycles, so it serialises every
-    /// transport call (prepare, fetch, save, delete are only reached from one cycle at a time).
+    /// Unsynchronised: `AppState.syncNow` calls `prepare()` directly, so concurrent triggers can race on this
+    /// flag. Harmless, because zone and subscription creation are idempotent.
     private var prepared = false
     /// CloudKit rejects modify operations above 400 records (`.limitExceeded`).
     static let chunkSize = 400
@@ -75,7 +75,9 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         } catch {
             switch Self.code(of: error) {
             case .changeTokenExpired:
-                return try await fetchOnce(since: nil)       // full refetch; LWW makes the replay safe
+                // full refetch; LWW makes the replay safe. Limitation: a nil-token fetch returns only live records,
+                // so deletions made on the server in the meantime are not seen by this device.
+                return try await fetchOnce(since: nil)
             case .zoneNotFound, .userDeletedZone:
                 prepared = false
                 try resetLocalSyncState()
@@ -100,6 +102,7 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         try appDatabase.write { db in
             try db.execute(sql: "DELETE FROM syncMeta")
             try db.execute(sql: "DELETE FROM setting WHERE key = ?", arguments: [SyncEngine.tokenKey])
+            try AppDatabase.requeueAll(db)    // the recreated zone is empty: everything must go up again
         }
     }
 

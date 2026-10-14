@@ -27,6 +27,18 @@ final class SyncMigrationTests: XCTestCase {
         XCTAssertEqual(try db.read { try String.fetchAll($0, sql: "SELECT uuid FROM entry") }.count, 1)
     }
 
+    func testRequeueAllForSyncQueuesLiveRowsAndSyncedSettings() throws {
+        let db = try AppDatabase.inMemory()
+        var c = Client(name: "ACME"); try db.insert(&c)
+        var p = Project(clientId: c.id, name: "Web"); try db.insert(&p)
+        var gone = Client(name: "Old"); try db.insert(&gone); try db.delete(gone)   // tombstone: not requeued
+        try db.setSetting("userName", "Martin")
+        try db.write { try $0.execute(sql: "DELETE FROM outbox") }
+        try db.requeueAllForSync()
+        XCTAssertEqual(try db.pendingOutbox().map { "\($0.tableName):\($0.op)" }.sorted(),
+                       ["client:upsert", "project:upsert", "setting:upsert"])
+    }
+
     func testDeviceIdIsCreatedOnceAndStable() throws {
         let queue = try DatabaseQueue()
         let a = try AppDatabase(queue)

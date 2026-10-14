@@ -29,6 +29,24 @@ public final class AppDatabase {
         }
     }
 
+    /// Queues every live row and every synced setting for upload, like the v3 seeding (R12). Used when the
+    /// server zone was recreated empty. The outbox has no uniqueness; the engine pushes the latest op per row.
+    public func requeueAllForSync() throws {
+        try write { try Self.requeueAll($0) }
+    }
+
+    static func requeueAll(_ db: Database) throws {
+        let now = Date()
+        for table in SyncTables.synced {
+            try db.execute(sql: "INSERT INTO outbox (tableName, uuid, op, createdAt) SELECT ?, uuid, 'upsert', ? FROM \(table) WHERE deletedAt IS NULL",
+                           arguments: [table, now])
+        }
+        for key in SyncTables.syncedSettings {
+            try db.execute(sql: "INSERT INTO outbox (tableName, uuid, op, createdAt) SELECT 'setting', key, 'upsert', ? FROM setting WHERE key = ?",
+                           arguments: [now, key])
+        }
+    }
+
     public func read<T>(_ block: (Database) throws -> T) throws -> T {
         try writer.read(block)
     }
