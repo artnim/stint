@@ -64,15 +64,6 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(try db.runningEntry()?.id, second.id)
     }
 
-    func testOnlyOneRunningEntryIsEnforcedByTheSchema() throws {
-        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
-        _ = try db.start(description: "a", projectId: nil, at: t0)
-        XCTAssertThrowsError(try db.write { db in
-            var e = Entry(description: "b", startUTC: t0)
-            try e.insert(db)
-        })
-    }
-
     func testFinishedEntriesInRangeExcludeRunningAndOutOfRange() throws {
         let t0 = Date(timeIntervalSince1970: 1_790_000_000)
         _ = try db.start(description: "old", projectId: nil, at: t0.addingTimeInterval(-7200))

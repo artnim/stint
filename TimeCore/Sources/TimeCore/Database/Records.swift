@@ -1,47 +1,65 @@
 import Foundation
 import GRDB
 
-public struct Client: Codable, Identifiable, Equatable, FetchableRecord, MutablePersistableRecord {
+public struct Client: Codable, Identifiable, Equatable, SyncableRecord {
     public static let databaseTableName = "client"
     public var id: Int64?
     public var name: String
     public var archived: Bool
+    public var uuid: String
+    public var modifiedAt: Date
+    public var modifiedBy: String
+    public var deletedAt: Date?
 
-    public init(id: Int64? = nil, name: String, archived: Bool = false) {
+    public init(id: Int64? = nil, name: String, archived: Bool = false,
+                uuid: String = UUID().uuidString, modifiedAt: Date = Date(), modifiedBy: String = "", deletedAt: Date? = nil) {
         self.id = id; self.name = name; self.archived = archived
+        self.uuid = uuid; self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy; self.deletedAt = deletedAt
     }
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
-public struct Project: Codable, Identifiable, Equatable, FetchableRecord, MutablePersistableRecord {
+public struct Project: Codable, Identifiable, Equatable, SyncableRecord {
     public static let databaseTableName = "project"
     public var id: Int64?
     public var clientId: Int64?
     public var name: String
     public var archived: Bool
+    public var uuid: String
+    public var modifiedAt: Date
+    public var modifiedBy: String
+    public var deletedAt: Date?
 
-    public init(id: Int64? = nil, clientId: Int64?, name: String, archived: Bool = false) {
+    public init(id: Int64? = nil, clientId: Int64?, name: String, archived: Bool = false,
+                uuid: String = UUID().uuidString, modifiedAt: Date = Date(), modifiedBy: String = "", deletedAt: Date? = nil) {
         self.id = id; self.clientId = clientId; self.name = name; self.archived = archived
+        self.uuid = uuid; self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy; self.deletedAt = deletedAt
     }
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
-public struct Repo: Codable, Identifiable, Equatable, FetchableRecord, MutablePersistableRecord {
+public struct Repo: Codable, Identifiable, Equatable, SyncableRecord {
     public static let databaseTableName = "repo"
     public var id: Int64?
     public var projectId: Int64?
     public var owner: String
     public var name: String
+    public var uuid: String
+    public var modifiedAt: Date
+    public var modifiedBy: String
+    public var deletedAt: Date?
 
     public var fullName: String { "\(owner)/\(name)" }
 
-    public init(id: Int64? = nil, projectId: Int64? = nil, owner: String, name: String) {
+    public init(id: Int64? = nil, projectId: Int64? = nil, owner: String, name: String,
+                uuid: String = UUID().uuidString, modifiedAt: Date = Date(), modifiedBy: String = "", deletedAt: Date? = nil) {
         self.id = id; self.projectId = projectId; self.owner = owner; self.name = name
+        self.uuid = uuid; self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy; self.deletedAt = deletedAt
     }
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
-public struct Entry: Codable, Identifiable, Equatable, FetchableRecord, MutablePersistableRecord {
+public struct Entry: Codable, Identifiable, Equatable, SyncableRecord {
     public static let databaseTableName = "entry"
     public var id: Int64?
     public var projectId: Int64?
@@ -53,6 +71,10 @@ public struct Entry: Codable, Identifiable, Equatable, FetchableRecord, MutableP
     public var issueTitle: String?
     public var tags: [String]
     public var importedKey: String?
+    public var uuid: String
+    public var modifiedAt: Date
+    public var modifiedBy: String
+    public var deletedAt: Date?
 
     /// nil while the entry is running
     public var hours: Double? {
@@ -62,11 +84,13 @@ public struct Entry: Codable, Identifiable, Equatable, FetchableRecord, MutableP
 
     public init(id: Int64? = nil, projectId: Int64? = nil, description: String, startUTC: Date,
                 endUTC: Date? = nil, repoId: Int64? = nil, issueNumber: Int? = nil,
-                issueTitle: String? = nil, tags: [String] = [], importedKey: String? = nil) {
+                issueTitle: String? = nil, tags: [String] = [], importedKey: String? = nil,
+                uuid: String = UUID().uuidString, modifiedAt: Date = Date(), modifiedBy: String = "", deletedAt: Date? = nil) {
         self.id = id; self.projectId = projectId; self.description = description
         self.startUTC = startUTC; self.endUTC = endUTC; self.repoId = repoId
         self.issueNumber = issueNumber; self.issueTitle = issueTitle
         self.tags = tags; self.importedKey = importedKey
+        self.uuid = uuid; self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy; self.deletedAt = deletedAt
     }
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
@@ -95,6 +119,10 @@ public struct Setting: Codable, Identifiable, Equatable, FetchableRecord, Persis
     public static let databaseTableName = "setting"
     public var key: String
     public var value: String
+    public var modifiedAt: Date
+    public var modifiedBy: String
     public var id: String { key }
-    public init(key: String, value: String) { self.key = key; self.value = value }
+    public init(key: String, value: String, modifiedAt: Date = Date(), modifiedBy: String = "") {
+        self.key = key; self.value = value; self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy
+    }
 }

@@ -4,9 +4,12 @@ import GRDB
 public final class AppDatabase {
     public let writer: any DatabaseWriter
 
+    public let deviceId: String
+
     public init(_ writer: any DatabaseWriter) throws {
         self.writer = writer
         try Self.migrator.migrate(writer)
+        self.deviceId = try writer.read { try Setting.fetchOne($0, key: "deviceId")?.value } ?? ""
     }
 
     public static func inMemory() throws -> AppDatabase {
@@ -91,6 +94,44 @@ public final class AppDatabase {
             try db.alter(table: "issueCache") { t in
                 t.add(column: "assignedToMe", .boolean).notNull().defaults(to: true)
             }
+        }
+        m.registerMigration("v3-sync") { db in
+            let now = Date()
+            let deviceId = UUID().uuidString
+            try db.create(table: "outbox") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("tableName", .text).notNull()
+                t.column("uuid", .text).notNull()
+                t.column("op", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+            try db.alter(table: "setting") { t in
+                t.add(column: "modifiedAt", .datetime).notNull().defaults(to: now)
+                t.add(column: "modifiedBy", .text).notNull().defaults(to: deviceId)
+            }
+            try Setting(key: "deviceId", value: deviceId, modifiedAt: now, modifiedBy: deviceId).insert(db)
+            for table in SyncTables.synced {
+                try db.alter(table: table) { t in
+                    t.add(column: "uuid", .text).notNull().defaults(to: "")
+                    t.add(column: "modifiedAt", .datetime).notNull().defaults(to: now)
+                    t.add(column: "modifiedBy", .text).notNull().defaults(to: deviceId)
+                    t.add(column: "deletedAt", .datetime)
+                }
+                for id in try Int64.fetchAll(db, sql: "SELECT id FROM \(table)") {
+                    try db.execute(sql: "UPDATE \(table) SET uuid = ? WHERE id = ?", arguments: [UUID().uuidString, id])
+                }
+                try db.execute(sql: "CREATE UNIQUE INDEX \(table)_uuid ON \(table)(uuid)")
+                // R12: the first cycle uploads everything that already exists
+                try db.execute(sql: "INSERT INTO outbox (tableName, uuid, op, createdAt) SELECT ?, uuid, 'upsert', ? FROM \(table)",
+                               arguments: [table, now])
+            }
+            for key in SyncTables.syncedSettings {
+                try db.execute(sql: "INSERT INTO outbox (tableName, uuid, op, createdAt) SELECT 'setting', key, 'upsert', ? FROM setting WHERE key = ?",
+                               arguments: [now, key])
+            }
+            // The one-running-entry invariant is now cross-device and enforced by R7 after every
+            // merge; a remote running stint must be storable alongside a local one until then.
+            try db.drop(index: "entry_one_running")
         }
         return m
     }

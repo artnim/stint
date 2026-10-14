@@ -88,13 +88,13 @@ public struct CSVImporter {
                     var clientId: Int64? = nil
                     if !clientName.isEmpty {
                         if let id = clientIds[clientName] { clientId = id } else {
-                            var c = Client(name: clientName); try c.insert(db)
+                            var c = Client(name: clientName); try db.syncInsert(&c, deviceId: database.deviceId, now: Date())
                             clientIds[clientName] = c.id; clientId = c.id
                         }
                     }
                     let pkey = "\(clientName)\u{0}\(projectName)"
                     if let id = projectIds[pkey] { projectId = id } else {
-                        var p = Project(clientId: clientId, name: projectName); try p.insert(db)
+                        var p = Project(clientId: clientId, name: projectName); try db.syncInsert(&p, deviceId: database.deviceId, now: Date())
                         projectIds[pkey] = p.id; projectId = p.id
                     }
                 }
@@ -102,7 +102,7 @@ public struct CSVImporter {
                     .filter { !$0.isEmpty }
                 var e = Entry(projectId: projectId, description: desc, startUTC: start, endUTC: end,
                               tags: tags, importedKey: key)
-                try e.insert(db)
+                try db.syncInsert(&e, deviceId: database.deviceId, now: Date())
                 result.imported += 1
             }
         }

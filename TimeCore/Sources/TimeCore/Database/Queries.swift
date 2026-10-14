@@ -11,7 +11,7 @@ public struct RecentItem: Equatable, Hashable {
 
 extension AppDatabase {
     public func runningEntry() throws -> Entry? {
-        try read { try Entry.filter(Column("endUTC") == nil).fetchOne($0) }
+        try read { try Entry.filter(Column("endUTC") == nil).filter(Column("deletedAt") == nil).fetchOne($0) }
     }
 
     /// Stops a running entry (at `now`) and starts a new one.
@@ -20,13 +20,13 @@ extension AppDatabase {
                       issueNumber: Int? = nil, issueTitle: String? = nil,
                       tags: [String] = [], at now: Date = Date()) throws -> Entry {
         try write { db in
-            if var running = try Entry.filter(Column("endUTC") == nil).fetchOne(db) {
+            if var running = try Entry.filter(Column("endUTC") == nil).filter(Column("deletedAt") == nil).fetchOne(db) {
                 running.endUTC = now
-                try running.update(db)
+                try db.syncUpdate(&running, deviceId: deviceId, now: now)
             }
             var e = Entry(projectId: projectId, description: description, startUTC: now,
                           repoId: repoId, issueNumber: issueNumber, issueTitle: issueTitle, tags: tags)
-            try e.insert(db)
+            try db.syncInsert(&e, deviceId: deviceId, now: now)
             return e
         }
     }
@@ -34,9 +34,9 @@ extension AppDatabase {
     @discardableResult
     public func stopRunning(at now: Date = Date()) throws -> Entry? {
         try write { db in
-            guard var running = try Entry.filter(Column("endUTC") == nil).fetchOne(db) else { return nil }
+            guard var running = try Entry.filter(Column("endUTC") == nil).filter(Column("deletedAt") == nil).fetchOne(db) else { return nil }
             running.endUTC = now
-            try running.update(db)
+            try db.syncUpdate(&running, deviceId: deviceId, now: now)
             return running
         }
     }
@@ -44,7 +44,7 @@ extension AppDatabase {
     /// Finished entries with `from <= startUTC < to`, oldest first.
     public func finishedEntries(from: Date, to: Date) throws -> [Entry] {
         try read { db in
-            try Entry.filter(Column("endUTC") != nil)
+            try Entry.filter(Column("endUTC") != nil && Column("deletedAt") == nil)
                 .filter(Column("startUTC") >= from && Column("startUTC") < to)
                 .order(Column("startUTC"))
                 .fetchAll(db)
@@ -54,29 +54,46 @@ extension AppDatabase {
     /// All entries, running included, with `from <= startUTC < to`, oldest first.
     public func entries(from: Date, to: Date) throws -> [Entry] {
         try read { db in
-            try Entry.filter(Column("startUTC") >= from && Column("startUTC") < to)
+            try Entry.filter(Column("deletedAt") == nil)
+                .filter(Column("startUTC") >= from && Column("startUTC") < to)
                 .order(Column("startUTC"))
                 .fetchAll(db)
         }
     }
 
-    public func insert<T: MutablePersistableRecord>(_ record: inout T) throws {
-        try write { try record.insert($0) }
+    /// Plain records (issueCache, outbox): no stamps, no log.
+    public func insert<T: MutablePersistableRecord>(_ record: inout T) throws { try write { try record.insert($0) } }
+    public func update<T: MutablePersistableRecord>(_ record: T) throws { try write { try record.update($0) } }
+    public func delete<T: MutablePersistableRecord>(_ record: T) throws { try write { _ = try record.delete($0) } }
+
+    /// Synced records: stamp with this device and log into the outbox (R1, R5); delete = tombstone (R4).
+    public func insert<T: SyncableRecord>(_ record: inout T) throws {
+        var r = record
+        try write { try $0.syncInsert(&r, deviceId: deviceId, now: Date()) }
+        record = r
+    }
+    public func update<T: SyncableRecord>(_ record: T) throws {
+        var r = record
+        try write { try $0.syncUpdate(&r, deviceId: deviceId, now: Date()) }
+    }
+    public func delete<T: SyncableRecord>(_ record: T) throws {
+        var r = record
+        try write { try $0.syncTombstone(&r, deviceId: deviceId, now: Date()) }
     }
 
-    public func update<T: MutablePersistableRecord>(_ record: T) throws {
-        try write { try record.update($0) }
+    public func purge(table: String, uuid: String) throws {
+        try write { try $0.execute(sql: "DELETE FROM \(table) WHERE uuid = ?", arguments: [uuid]) }
     }
 
-    public func delete<T: MutablePersistableRecord>(_ record: T) throws {
-        try write { _ = try record.delete($0) }
+    public func pendingOutbox() throws -> [OutboxItem] {
+        try read { try OutboxItem.order(Column("id")).fetchAll($0) }
     }
 
     public func recents(limit: Int = 10) throws -> [RecentItem] {
         try read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT description, projectId, repoId, issueNumber, issueTitle, MAX(startUTC) AS last
-                FROM entry WHERE endUTC IS NOT NULL
+                FROM entry WHERE endUTC IS NOT NULL AND deletedAt IS NULL
                 GROUP BY description, projectId
                 ORDER BY last DESC LIMIT ?
                 """, arguments: [limit])
@@ -89,15 +106,15 @@ extension AppDatabase {
     }
 
     public func allClients() throws -> [Client] {
-        try read { try Client.order(Column("name")).fetchAll($0) }
+        try read { try Client.filter(Column("deletedAt") == nil).order(Column("name")).fetchAll($0) }
     }
 
     public func allProjects() throws -> [Project] {
-        try read { try Project.order(Column("name")).fetchAll($0) }
+        try read { try Project.filter(Column("deletedAt") == nil).order(Column("name")).fetchAll($0) }
     }
 
     public func allRepos() throws -> [Repo] {
-        try read { try Repo.order(Column("owner"), Column("name")).fetchAll($0) }
+        try read { try Repo.filter(Column("deletedAt") == nil).order(Column("owner"), Column("name")).fetchAll($0) }
     }
 
     public func setting(_ key: String) throws -> String? {
@@ -105,7 +122,12 @@ extension AppDatabase {
     }
 
     public func setSetting(_ key: String, _ value: String) throws {
-        try write { try Setting(key: key, value: value).save($0) }
+        let now = Date()
+        try write { db in
+            let s = Setting(key: key, value: value, modifiedAt: now, modifiedBy: deviceId)
+            try s.save(db)
+            if SyncTables.syncedSettings.contains(key) { try db.logChange(table: "setting", uuid: key, op: .upsert, now: now) }
+        }
     }
 }
 
@@ -159,10 +181,10 @@ extension AppDatabase {
 
     private func issueRows(_ request: QueryInterfaceRequest<IssueCache>) throws -> [IssueRow] {
         try read { db in
-            let repos = Dictionary(uniqueKeysWithValues: try Repo.fetchAll(db).map { ($0.id!, $0) })
-            let projects = Dictionary(uniqueKeysWithValues: try Project.fetchAll(db).map { ($0.id!, $0) })
-            let rows = try request.fetchAll(db).map { i -> IssueRow in
-                let repo = repos[i.repoId]!
+            let repos = Dictionary(uniqueKeysWithValues: try Repo.filter(Column("deletedAt") == nil).fetchAll(db).map { ($0.id!, $0) })
+            let projects = Dictionary(uniqueKeysWithValues: try Project.filter(Column("deletedAt") == nil).fetchAll(db).map { ($0.id!, $0) })
+            let rows = try request.fetchAll(db).compactMap { i -> IssueRow? in
+                guard let repo = repos[i.repoId] else { return nil }
                 return IssueRow(issue: i, repo: repo, projectName: repo.projectId.flatMap { projects[$0]?.name })
             }
             return rows.sorted {
@@ -182,11 +204,11 @@ extension AppDatabase {
         guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { throw RepoError.invalidName(fullName) }
         let (owner, name) = (String(parts[0]), String(parts[1]))
         return try write { db in
-            if try Repo.filter(Column("owner") == owner && Column("name") == name).fetchCount(db) > 0 {
+            if try Repo.filter(Column("owner") == owner && Column("name") == name && Column("deletedAt") == nil).fetchCount(db) > 0 {
                 throw RepoError.duplicate("\(owner)/\(name)")
             }
             var r = Repo(owner: owner, name: name)
-            try r.insert(db)
+            try db.syncInsert(&r, deviceId: deviceId, now: Date())
             return r
         }
     }
@@ -195,10 +217,14 @@ extension AppDatabase {
         try write { db in
             guard var repo = try Repo.fetchOne(db, key: repoId) else { return }
             repo.projectId = projectId
-            try repo.update(db)
+            let now = Date()
+            try db.syncUpdate(&repo, deviceId: deviceId, now: now)
             if let projectId {
-                try db.execute(sql: "UPDATE entry SET projectId = ? WHERE repoId = ? AND projectId IS NULL",
-                               arguments: [projectId, repoId])
+                let orphans = try Entry.filter(Column("repoId") == repoId && Column("projectId") == nil && Column("deletedAt") == nil).fetchAll(db)
+                for var e in orphans {
+                    e.projectId = projectId
+                    try db.syncUpdate(&e, deviceId: deviceId, now: now)
+                }
             }
         }
     }
