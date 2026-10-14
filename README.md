@@ -32,6 +32,9 @@ Requires macOS 14 or newer.
 - **Exact data, rounded report.** The database stores start and end as UTC instants and
   never a duration. Rounding and snapping happen only when a report is built, and the
   report total is always the sum of the (rounded) raw durations.
+- **iCloud sync and an iPhone companion.** Entries, projects and settings sync between
+  your Macs and an iPhone through your own iCloud account; the iPhone app starts and stops
+  timers and edits recent entries.
 - **Import from solidtime.** Settings → Import reads a solidtime "detailed" CSV export,
   creating clients and projects from the file. Re-importing the same file adds nothing.
 
@@ -84,7 +87,7 @@ The GitHub tokens are in the login Keychain, never in the database.
 ## Sync and iPhone
 
 Stint syncs between your Macs and an iPhone through your own iCloud account. Nothing
-goes through a server of mine; the data sits in the CloudKit private database, in a
+goes through any other server; the data sits in the CloudKit private database, in a
 custom zone, and only you can read it. Entries, clients, projects, repository mappings
 and report presets sync. Saves use CloudKit change tags: a push that hits a record
 changed on the server in the meantime is retried after the next pull.
@@ -99,6 +102,8 @@ changed on the server in the meantime is retried after the next pull.
 - **Status.** Settings shows the sync status line and a "Sync now" button.
 
 The iPhone app is installed from Xcode (scheme `StintMobile`) or from TestFlight.
+Release Mac builds and the iPhone app use the production CloudKit environment. A Debug
+Mac build uses the development environment and therefore does not see the phone's data.
 
 ## Development
 
@@ -138,11 +143,15 @@ syncs, do these once:
    iCloud (CloudKit) and Push Notifications on the App IDs `io.artnim.stint` and
    `io.artnim.stint.ios`.
 2. Create a Developer ID provisioning profile named exactly `Stint Developer ID` for
-   `io.artnim.stint`, download it and install it (double-click).
-3. Export it and store it as a repository secret:
+   `io.artnim.stint`, download it and install it (double-click). Xcode 16 and later keep
+   profiles in `~/Library/Developer/Xcode/UserData/Provisioning Profiles`, older Xcode in
+   `~/Library/MobileDevice/Provisioning Profiles`.
+3. Export the newest matching profile and store it as a repository secret:
 
-       p=$(for f in ~/Library/MobileDevice/Provisioning\ Profiles/*.provisionprofile; do
-         [ "$(security cms -D -i "$f" | plutil -extract Name raw -o - -)" = "Stint Developer ID" ] && echo "$f"; done | tail -1)
+       p=$(find ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles \
+             ~/Library/MobileDevice/Provisioning\ Profiles -name '*.provisionprofile' -print0 2>/dev/null |
+           xargs -0 ls -t | while IFS= read -r f; do
+             [ "$(security cms -D -i "$f" | plutil -extract Name raw -o - -)" = "Stint Developer ID" ] && echo "$f"; done | head -1)
        base64 -i "$p" | gh secret set MACOS_PROVISIONING_PROFILE_BASE64 --repo artnim/stint
 
 4. In the CloudKit Console, open the container, Schema, and choose Deploy Schema Changes to

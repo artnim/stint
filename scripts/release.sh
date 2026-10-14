@@ -26,7 +26,10 @@ DIST=dist
 ZIP="$DIST/Stint-$VERSION.zip"
 
 PROFILE_FOUND=0
-for f in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile; do
+# Xcode 16 and later keep profiles under UserData; older Xcode under MobileDevice. A missing directory
+# leaves its glob unexpanded, which the existence guard skips.
+for f in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.provisionprofile \
+         "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile; do
   [ -e "$f" ] || continue
   [ "$(security cms -D -i "$f" 2>/dev/null | plutil -extract Name raw -o - - 2>/dev/null)" = "Stint Developer ID" ] \
     && { PROFILE_FOUND=1; break; }
