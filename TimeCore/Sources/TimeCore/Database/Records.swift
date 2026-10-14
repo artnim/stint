@@ -80,11 +80,13 @@ public struct IssueCache: Codable, Identifiable, Equatable, FetchableRecord, Mut
     public var isPullRequest: Bool
     public var state: String          // "open" | "closed"
     public var updatedAt: Date
+    public var assignedToMe: Bool
 
     public init(id: Int64? = nil, repoId: Int64, number: Int, title: String,
-                isPullRequest: Bool, state: String, updatedAt: Date) {
+                isPullRequest: Bool, state: String, updatedAt: Date, assignedToMe: Bool = true) {
         self.id = id; self.repoId = repoId; self.number = number; self.title = title
         self.isPullRequest = isPullRequest; self.state = state; self.updatedAt = updatedAt
+        self.assignedToMe = assignedToMe
     }
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }

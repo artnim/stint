@@ -6,6 +6,7 @@ struct ProjectsSettingsTab: View {
     @State private var newClient = ""
     @State private var newProject = ""
     @State private var newProjectClient: Int64?
+    @State private var newRepo = ""
     @State private var clientToDelete: Client?
     @State private var projectToDelete: Project?
 
@@ -62,7 +63,13 @@ struct ProjectsSettingsTab: View {
                         .labelsHidden().frame(width: 160)
                     }
                 }
-                Text("Repositories appear here after the first GitHub sync.").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    TextField("owner/name", text: $newRepo)
+                    Button("Add") { state.addRepo(fullName: newRepo); if state.lastError == nil { newRepo = "" } }
+                        .disabled(!newRepo.contains("/"))
+                }
+                Text("Repositories appear here after the first GitHub sync; add one by hand to search its issues before anything is assigned to you.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding()

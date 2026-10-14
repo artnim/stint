@@ -95,6 +95,9 @@ struct PopoverView: View {
                                 .foregroundStyle(.secondary)
                             Text("#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
                             Text(row.issue.title).lineLimit(1)
+                            if !row.issue.assignedToMe {
+                                Text("unassigned").font(.caption2).foregroundStyle(.tertiary)
+                            }
                             Spacer()
                             if name == nil { Text(row.repo.fullName).font(.caption).foregroundStyle(.secondary) }
                         }
@@ -125,9 +128,10 @@ struct PopoverView: View {
     }
 
     /// Mapped projects first (as `openIssueRows` orders them), then one "Unmapped" group.
+    /// Without a query only issues assigned to you; a query searches every cached open issue.
     private var groupedIssues: [IssueGroup] {
         let q = query.lowercased()
-        let rows = q.isEmpty ? state.issueRows : state.issueRows.filter {
+        let rows = q.isEmpty ? state.issueRows : state.allIssueRows.filter {
             $0.issue.title.lowercased().contains(q) || "#\($0.issue.number)".contains(q) || $0.repo.fullName.lowercased().contains(q)
         }
         var order: [String?] = []

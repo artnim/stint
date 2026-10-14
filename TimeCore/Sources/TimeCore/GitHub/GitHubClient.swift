@@ -8,11 +8,13 @@ public struct GitHubIssue: Equatable {
     public var isPullRequest: Bool
     public var state: String
     public var updatedAt: Date
+    public var assignedToMe: Bool
 
     public init(repoOwner: String, repoName: String, number: Int, title: String,
-                isPullRequest: Bool, state: String, updatedAt: Date) {
+                isPullRequest: Bool, state: String, updatedAt: Date, assignedToMe: Bool = true) {
         self.repoOwner = repoOwner; self.repoName = repoName; self.number = number
         self.title = title; self.isPullRequest = isPullRequest; self.state = state; self.updatedAt = updatedAt
+        self.assignedToMe = assignedToMe
     }
 }
 
@@ -47,13 +49,30 @@ public struct GitHubClient {
         self.token = token; self.transport = transport; self.baseURL = baseURL
     }
 
+    /// Open issues and PRs assigned to the token's user, across every repo the token can see.
     public func assignedIssues() async throws -> [GitHubIssue] {
-        var url: URL? = baseURL.appending(path: "issues")
+        let url = baseURL.appending(path: "issues")
             .appending(queryItems: [.init(name: "filter", value: "assigned"),
                                     .init(name: "state", value: "open"),
                                     .init(name: "per_page", value: "100")])
+        return try await fetchPages(from: url, maxPages: Int.max, defaultRepo: nil)
+    }
+
+    /// All open issues and PRs of one repo (newest first), whether assigned or not,
+    /// capped at `maxPages` × 100. Items carry `assignedToMe == false`.
+    public func repoIssues(owner: String, name: String, maxPages: Int = 5) async throws -> [GitHubIssue] {
+        let url = baseURL.appending(path: "repos/\(owner)/\(name)/issues")
+            .appending(queryItems: [.init(name: "state", value: "open"),
+                                    .init(name: "per_page", value: "100")])
+        return try await fetchPages(from: url, maxPages: maxPages, defaultRepo: (owner, name))
+    }
+
+    private func fetchPages(from start: URL, maxPages: Int,
+                            defaultRepo: (owner: String, name: String)?) async throws -> [GitHubIssue] {
+        var url: URL? = start
         var out: [GitHubIssue] = []
-        while let u = url {
+        var pages = 0
+        while let u = url, pages < maxPages {
             let (data, resp) = try await transport.get(u, headers: [
                 "Authorization": "Bearer \(token)",
                 "Accept": "application/vnd.github+json",
@@ -64,8 +83,9 @@ public struct GitHubClient {
             case 401: throw GitHubError.unauthorized
             default: throw GitHubError.http(resp.statusCode)
             }
-            out += try Self.decode(data)
+            out += try Self.decode(data, defaultRepo: defaultRepo)
             url = Self.nextLink(from: resp.value(forHTTPHeaderField: "Link"))
+            pages += 1
         }
         return out
     }
@@ -85,15 +105,20 @@ public struct GitHubClient {
         let repository: Repository?
     }
 
-    static func decode(_ data: Data) throws -> [GitHubIssue] {
+    /// `/issues` items carry their `repository`; `/repos/{o}/{r}/issues` items do not, so the
+    /// caller passes the repo. With a `defaultRepo` the items are "not assigned to me".
+    static func decode(_ data: Data, defaultRepo: (owner: String, name: String)? = nil) throws -> [GitHubIssue] {
         let dec = JSONDecoder()
         dec.dateDecodingStrategy = .iso8601
         do {
             return try dec.decode([RawIssue].self, from: data).compactMap { r in
-                guard let repo = r.repository else { return nil }
-                return GitHubIssue(repoOwner: repo.owner.login, repoName: repo.name, number: r.number,
+                let owner = r.repository?.owner.login ?? defaultRepo?.owner
+                let name = r.repository?.name ?? defaultRepo?.name
+                guard let owner, let name else { return nil }
+                return GitHubIssue(repoOwner: owner, repoName: name, number: r.number,
                                    title: r.title, isPullRequest: r.pull_request != nil,
-                                   state: r.state, updatedAt: r.updated_at)
+                                   state: r.state, updatedAt: r.updated_at,
+                                   assignedToMe: defaultRepo == nil)
             }
         } catch {
             throw GitHubError.decoding(String(describing: error))

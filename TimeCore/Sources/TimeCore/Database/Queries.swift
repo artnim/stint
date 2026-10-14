@@ -145,11 +145,13 @@ public struct IssueRow: Equatable, Identifiable {
 
 extension AppDatabase {
     /// Open cached issues, mapped repos first (by project name), then unmapped; within a group by repo name and number.
-    public func openIssueRows() throws -> [IssueRow] {
+    public func openIssueRows(assignedOnly: Bool = true) throws -> [IssueRow] {
         try read { db in
             let repos = Dictionary(uniqueKeysWithValues: try Repo.fetchAll(db).map { ($0.id!, $0) })
             let projects = Dictionary(uniqueKeysWithValues: try Project.fetchAll(db).map { ($0.id!, $0) })
-            let rows = try IssueCache.filter(Column("state") == "open").fetchAll(db).map { i -> IssueRow in
+            var request = IssueCache.filter(Column("state") == "open")
+            if assignedOnly { request = request.filter(Column("assignedToMe") == true) }
+            let rows = try request.fetchAll(db).map { i -> IssueRow in
                 let repo = repos[i.repoId]!
                 return IssueRow(issue: i, repo: repo, projectName: repo.projectId.flatMap { projects[$0]?.name })
             }
@@ -158,6 +160,24 @@ extension AppDatabase {
                 let b = ($1.projectName == nil ? 1 : 0, $1.projectName ?? "", $1.repo.fullName, $1.issue.number)
                 return a < b
             }
+        }
+    }
+
+    public enum RepoError: Error, Equatable { case invalidName(String), duplicate(String) }
+
+    /// Tracks a repository by "owner/name" so its open issues are synced even before anything is assigned.
+    @discardableResult
+    public func addRepo(fullName: String) throws -> Repo {
+        let parts = fullName.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { throw RepoError.invalidName(fullName) }
+        let (owner, name) = (String(parts[0]), String(parts[1]))
+        return try write { db in
+            if try Repo.filter(Column("owner") == owner && Column("name") == name).fetchCount(db) > 0 {
+                throw RepoError.duplicate("\(owner)/\(name)")
+            }
+            var r = Repo(owner: owner, name: name)
+            try r.insert(db)
+            return r
         }
     }
 

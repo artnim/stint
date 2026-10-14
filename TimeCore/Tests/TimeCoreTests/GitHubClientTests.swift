@@ -49,6 +49,43 @@ final class GitHubClientTests: XCTestCase {
         }
     }
 
+    func testRepoIssuesFillsRepoFromArgumentsAndPaginates() async throws {
+        let base = "https://api.github.com/repos/artnim/app/issues?state=open&per_page=100"
+        let page2 = "https://api.github.com/repos/artnim/app/issues?state=open&per_page=100&page=2"
+        let transport = FakeTransport(responses: [
+            base: (200, try fixture("github-repo-issues"), ["Link": "<\(page2)>; rel=\"next\""]),
+            page2: (200, try fixture("github-issues-page2"), [:]),
+        ])
+        let issues = try await GitHubClient(token: "tok", transport: transport).repoIssues(owner: "artnim", name: "app")
+        XCTAssertEqual(issues.map(\.number), [200, 201, 7])
+        XCTAssertEqual(issues.map(\.repoOwner), ["artnim", "artnim", "artnim"])
+        XCTAssertEqual(issues.map(\.repoName), ["app", "app", "app"])
+        XCTAssertEqual(issues[1].isPullRequest, true)
+        XCTAssertEqual(issues.map(\.assignedToMe), [false, false, false])
+    }
+
+    func testRepoIssuesStopsAtMaxPages() async throws {
+        let base = "https://api.github.com/repos/artnim/app/issues?state=open&per_page=100"
+        let page2 = "https://api.github.com/repos/artnim/app/issues?state=open&per_page=100&page=2"
+        let transport = FakeTransport(responses: [
+            base: (200, try fixture("github-repo-issues"), ["Link": "<\(page2)>; rel=\"next\""]),
+            page2: (200, try fixture("github-repo-issues"), ["Link": "<\(base)>; rel=\"next\""]),
+        ])
+        let issues = try await GitHubClient(token: "tok", transport: transport).repoIssues(owner: "artnim", name: "app", maxPages: 2)
+        XCTAssertEqual(issues.count, 4)
+    }
+
+    func testRepoIssuesHTTPError() async {
+        let base = "https://api.github.com/repos/artnim/app/issues?state=open&per_page=100"
+        let transport = FakeTransport(responses: [base: (404, Data("{}".utf8), [:])])
+        do {
+            _ = try await GitHubClient(token: "tok", transport: transport).repoIssues(owner: "artnim", name: "app")
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? GitHubError, .http(404))
+        }
+    }
+
     func testNextLinkParsing() {
         XCTAssertEqual(GitHubClient.nextLink(from: "<https://x/a?page=2>; rel=\"next\", <https://x/a?page=9>; rel=\"last\"")?.absoluteString, "https://x/a?page=2")
         XCTAssertNil(GitHubClient.nextLink(from: "<https://x/a?page=1>; rel=\"prev\""))

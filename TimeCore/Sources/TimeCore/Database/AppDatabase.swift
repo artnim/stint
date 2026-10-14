@@ -86,6 +86,12 @@ public final class AppDatabase {
                 t.column("value", .text).notNull()
             }
         }
+        m.registerMigration("v2-issue-assigned") { db in
+            // issues of tracked repos that are not assigned to the user, for search
+            try db.alter(table: "issueCache") { t in
+                t.add(column: "assignedToMe", .boolean).notNull().defaults(to: true)
+            }
+        }
         return m
     }
 }

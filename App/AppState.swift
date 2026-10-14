@@ -16,7 +16,8 @@ final class AppState {
     var now = Date()
     var staleRunning: Entry?
     var lastError: String?
-    var issueRows: [IssueRow] = []
+    var issueRows: [IssueRow] = []          // assigned to me (popover default)
+    var allIssueRows: [IssueRow] = []       // every open issue of tracked repos (popover search)
     var githubError: String?
 
     private var ticker: Timer?
@@ -72,26 +73,28 @@ final class AppState {
             clients = try db.allClients()
             repos = try db.allRepos()
             issueRows = try db.openIssueRows()
+            allIssueRows = try db.openIssueRows(assignedOnly: false)
         } catch {
             lastError = "\(error)"
         }
     }
 
-    /// Fetches assigned issues with every configured account and merges them. Issues missing from
-    /// the merged result are closed only when every account succeeded, so one failing token never
-    /// hides another organisation's issues.
+    /// Fetches the issues assigned to you with every configured account, plus every open issue of
+    /// each tracked repository (trying the accounts in order until one can read it), and merges
+    /// them. Issues missing from the merged result are closed only when everything succeeded, so
+    /// one failing token or unreadable repo never hides another organisation's issues.
     func syncIssues() async {
         let accounts = KeychainStore.githubAccounts()
         guard !accounts.isEmpty else {
             githubError = "No GitHub token. Add one in Settings → GitHub."
             return
         }
-        var merged: [GitHubIssue] = []
+        var assigned: [GitHubIssue] = []
         var rejected: [String] = []
         var failed = 0
         for account in accounts {
             do {
-                merged += try await GitHubClient(token: account.token).assignedIssues()
+                assigned += try await GitHubClient(token: account.token).assignedIssues()
             } catch GitHubError.unauthorized {
                 rejected.append(account.label)
                 failed += 1
@@ -99,7 +102,25 @@ final class AppState {
                 failed += 1   // offline or rate-limited: keep the cache, stay quiet (spec §3)
             }
         }
-        if failed < accounts.count || !merged.isEmpty {
+        let usable = accounts.filter { !rejected.contains($0.label) }
+        var listed: [GitHubIssue] = []
+        for repo in (try? db.allRepos()) ?? [] {
+            var fetched = false
+            for account in usable {
+                do {
+                    listed += try await GitHubClient(token: account.token).repoIssues(owner: repo.owner, name: repo.name)
+                    fetched = true
+                    break
+                } catch GitHubError.http(let code) where code == 403 || code == 404 {
+                    continue   // this token cannot see the repo; try the next account
+                } catch {
+                    break      // unauthorized, offline, rate-limited: do not hammer the API
+                }
+            }
+            if !fetched { failed += 1 }
+        }
+        let merged = IssueSync.merge(assigned: assigned, repoIssues: listed)
+        if !merged.isEmpty || failed == 0 {
             do {
                 try IssueSync.apply(merged, to: db, closeMissing: failed == 0)
                 refresh()
@@ -109,6 +130,12 @@ final class AppState {
         }
         githubError = rejected.isEmpty ? nil
             : "GitHub rejected the token for \(rejected.joined(separator: ", ")) (401). Check Settings → GitHub."
+    }
+
+    /// Tracks "owner/name" so its open issues are searchable before anything is assigned to you.
+    func addRepo(fullName: String) {
+        perform { try db.addRepo(fullName: fullName) }
+        if lastError == nil { Task { await syncIssues() } }
     }
 
     func startIssue(_ row: IssueRow) {

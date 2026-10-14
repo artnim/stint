@@ -68,6 +68,39 @@ final class IssueSyncTests: XCTestCase {
                        ["Z-Project/zeta#5", "-/alpha#3", "-/alpha#9"])
     }
 
+    func testMergeMarksAssignmentAndDeduplicates() {
+        var unassigned = issue(1, title: "from repo listing")
+        unassigned.assignedToMe = false
+        var other = issue(3, title: "nobody's")
+        other.assignedToMe = false
+        let merged = IssueSync.merge(assigned: [issue(1, title: "assigned"), issue(2, repo: "app")],
+                                     repoIssues: [unassigned, other])
+        XCTAssertEqual(merged.map { "\($0.repoName)#\($0.number):\($0.assignedToMe)" }.sorted(),
+                       ["app#2:true", "website#1:true", "website#3:false"])
+        XCTAssertEqual(merged.first { $0.number == 1 }?.title, "assigned")
+    }
+
+    func testOpenIssueRowsFiltersUnassignedUnlessAsked() throws {
+        var other = issue(3, title: "nobody's")
+        other.assignedToMe = false
+        try IssueSync.apply([issue(1), other], to: db)
+        XCTAssertEqual(try db.openIssueRows().map(\.issue.number), [1])
+        let all = try db.openIssueRows(assignedOnly: false)
+        XCTAssertEqual(all.map(\.issue.number), [1, 3])
+        XCTAssertEqual(all.map(\.issue.assignedToMe), [true, false])
+        // a later sync that assigns #3 flips the flag
+        try IssueSync.apply([issue(1), issue(3)], to: db)
+        XCTAssertEqual(try db.openIssueRows().map(\.issue.number), [1, 3])
+    }
+
+    func testAddRepoParsesFullNameAndRejectsDuplicates() throws {
+        let repo = try db.addRepo(fullName: " Artnim/Website ")
+        XCTAssertEqual(repo.fullName, "Artnim/Website")
+        XCTAssertThrowsError(try db.addRepo(fullName: "Artnim/Website"))
+        XCTAssertThrowsError(try db.addRepo(fullName: "no-slash"))
+        XCTAssertEqual(try db.allRepos().count, 1)
+    }
+
     func testPartialSyncDoesNotCloseMissingIssues() throws {
         try IssueSync.apply([issue(1), issue(2, repo: "app")], to: db)
         // one account failed: apply only what the others returned, close nothing

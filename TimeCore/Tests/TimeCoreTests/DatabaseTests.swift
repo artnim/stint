@@ -18,6 +18,18 @@ final class DatabaseTests: XCTestCase {
         }
     }
 
+    func testIssueCacheHasAssignedToMeColumnDefaultingToTrue() throws {
+        let columns = try db.read { try $0.columns(in: "issueCache").map(\.name) }
+        XCTAssertTrue(columns.contains("assignedToMe"))
+        var repo = Repo(owner: "o", name: "r")
+        try db.insert(&repo)
+        try db.write { db in
+            try db.execute(sql: "INSERT INTO issueCache (repoId, number, title, isPullRequest, state, updatedAt) VALUES (?, 1, 't', 0, 'open', ?)",
+                           arguments: [repo.id, Date()])
+        }
+        XCTAssertEqual(try db.read { try IssueCache.fetchOne($0) }?.assignedToMe, true)
+    }
+
     func testBackupCopyContainsData() throws {
         var c = Client(name: "ACME")
         try db.write { try c.insert($0) }
