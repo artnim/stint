@@ -31,7 +31,7 @@ Before the first real use, run the parity gate described in `docs/parity.md` for
 
 `scripts/release.sh` builds a Release configuration signed with the Developer ID
 Application certificate (hardened runtime, secure timestamp), notarizes it with
-`notarytool`, staples the ticket and writes `dist/Timetracker-<version>.zip`.
+`notarytool`, staples the ticket and writes `dist/Timetracker-<version>.zip`. It always builds from scratch in `build-release/`.
 Debug builds stay ad-hoc signed, so contributors need no certificate.
 
 One-time setup for notarization (an app-specific password stored in the login keychain):

@@ -17,15 +17,19 @@ NOTARIZE=1
 VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml)
 [ -n "$VERSION" ] || { echo "MARKETING_VERSION not found in project.yml" >&2; exit 1; }
 BUILD_NUMBER=$(git rev-list --count HEAD)
-APP=build/Build/Products/Release/Timetracker.app
+# a clean, dedicated derived-data dir: an incremental build can re-copy resource bundles
+# after the app was sealed, which breaks the signature
+DERIVED=build-release
+APP=$DERIVED/Build/Products/Release/Timetracker.app
 DIST=dist
 ZIP="$DIST/Timetracker-$VERSION.zip"
 
 echo "==> generating project"
 xcodegen generate --quiet
 
-echo "==> building Release $VERSION ($BUILD_NUMBER)"
-xcodebuild -scheme Timetracker -configuration Release -derivedDataPath build \
+echo "==> building Release $VERSION ($BUILD_NUMBER) from scratch"
+rm -rf "$DERIVED"
+xcodebuild -scheme Timetracker -configuration Release -derivedDataPath "$DERIVED" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build 2>&1 | grep -E "error:|warning: .*App/|BUILD" || true
 [ -d "$APP" ] || { echo "build failed: $APP missing" >&2; exit 1; }
 
@@ -40,7 +44,13 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 
 if [ "$NOTARIZE" = 1 ]; then
   echo "==> notarizing (profile $NOTARY_PROFILE)"
-  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  RESULT=$(xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee /dev/stderr)
+  if ! grep -q "status: Accepted" <<<"$RESULT"; then
+    ID=$(sed -n 's/^ *id: *//p' <<<"$RESULT" | head -1)
+    echo "notarization not accepted; log:" >&2
+    [ -n "$ID" ] && xcrun notarytool log "$ID" --keychain-profile "$NOTARY_PROFILE" >&2
+    exit 1
+  fi
   echo "==> stapling"
   xcrun stapler staple "$APP"
   rm -f "$ZIP"

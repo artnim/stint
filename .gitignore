@@ -9,3 +9,4 @@ fixtures/private/
 .DS_Store
 build/
 dist/
+build-release/
