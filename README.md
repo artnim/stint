@@ -91,6 +91,9 @@ rendering, CSV import, GitHub client); `App/` is a thin SwiftUI layer on top. Te
 One test is environment-gated: `docs/parity.md` describes how the report was verified
 against an independent reference implementation. Design notes are in `docs/design.md`.
 
+Building needs an Apple developer team for the iCloud entitlement. Contributors without one can
+build with `xcodebuild ... CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO`; sync then stays off.
+
 ### Release build
 
 `scripts/release.sh` builds a Release configuration signed with the Developer ID

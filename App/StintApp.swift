@@ -1,8 +1,24 @@
 import SwiftUI
+import CloudKit
 import TimeCore
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.registerForRemoteNotifications()
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in await AppState.shared?.syncNow(reason: "active") }
+        }
+    }
+    func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
+        if CKNotification(fromRemoteNotificationDictionary: userInfo) != nil {
+            Task { @MainActor in await AppState.shared?.syncNow(reason: "push") }
+        }
+    }
+}
 
 @main
 struct StintApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var state = AppState.load()
 
     var body: some Scene {

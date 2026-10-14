@@ -25,6 +25,49 @@ final class AppState {
 
     private var ticker: Timer?
 
+    static weak var shared: AppState?   // read only from @MainActor tasks
+
+    var syncStatus = "Sync: not started"
+    private var transport: CloudKitTransport?
+    private var engine: SyncEngine?
+    private var debouncedSync: Task<Void, Never>?
+    private var periodicSync: Timer?
+
+    func startSync() {
+        Self.shared = self
+        let transport = CloudKitTransport(database: db)
+        self.transport = transport
+        engine = SyncEngine(database: db, transport: transport)
+        periodicSync = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.syncNow(reason: "periodic") }
+        }
+        Task { await syncNow(reason: "launch") }
+    }
+
+    func syncNow(reason: String) async {
+        guard let transport, let engine else { return }
+        guard await transport.accountAvailable() else { syncStatus = "Sync off: not signed in to iCloud"; return }
+        do {
+            try await transport.prepare()
+            let s = try await engine.sync()
+            refresh()
+            let stamp = Date().formatted(date: .omitted, time: .shortened)
+            syncStatus = "Synced \(stamp): \(s.pushed) up, \(s.pulled) down" + (s.deleted > 0 ? ", \(s.deleted) deleted" : "")
+        } catch {
+            syncStatus = "Sync problem: \(error.localizedDescription)"
+        }
+    }
+
+    /// Called after every local write: sync two seconds after the last one.
+    func scheduleSync() {
+        debouncedSync?.cancel()
+        debouncedSync = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.syncNow(reason: "local change")
+        }
+    }
+
     static let defaultDatabaseURL: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appending(path: "Stint/stint.sqlite")
@@ -72,7 +115,9 @@ final class AppState {
     /// Opens the configured database; on a migration failure shows the error and quits (spec §7).
     static func load() -> AppState {
         do {
-            return AppState(db: try AppDatabase.open(at: databaseURL))
+            let state = AppState(db: try AppDatabase.open(at: databaseURL))
+            state.startSync()
+            return state
         } catch {
             let alert = NSAlert()
             alert.messageText = "Stint cannot open its database"
@@ -86,7 +131,11 @@ final class AppState {
     func reopen(at url: URL) throws {
         db = try AppDatabase.open(at: url)
         UserDefaults.standard.set(url.path, forKey: "databasePath")
+        let transport = CloudKitTransport(database: db)
+        self.transport = transport
+        engine = SyncEngine(database: db, transport: transport)
         refresh()
+        scheduleSync()
     }
 
     func refresh() {
@@ -206,7 +255,7 @@ final class AppState {
 
     var userName: String {
         get { (try? db.setting("userName")) ?? "" }
-        set { try? db.setSetting("userName", newValue); }
+        set { try? db.setSetting("userName", newValue); scheduleSync() }
     }
 
     func projectName(_ id: Int64?) -> String {
@@ -254,6 +303,7 @@ final class AppState {
     func perform(_ block: () throws -> Void) {
         do { try block(); lastError = nil } catch { lastError = "\(error)" }
         refresh()
+        scheduleSync()
     }
 
     func entries(year: Int, month: Int) -> [Entry] {

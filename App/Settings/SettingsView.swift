@@ -34,6 +34,12 @@ struct GeneralSettingsTab: View {
                     Text(dbMessage).font(.caption).foregroundStyle(.secondary)
                 }
             }
+            LabeledContent("iCloud sync") {
+                HStack {
+                    Text(state.syncStatus).font(.caption)
+                    Button("Sync now") { Task { await state.syncNow(reason: "manual") } }
+                }
+            }
         }
         .padding()
         .onAppear { name = state.userName }

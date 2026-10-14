@@ -27,6 +27,9 @@ targets:
       path: App/Stint.entitlements
       properties:
         com.apple.security.app-sandbox: false
+        com.apple.developer.icloud-container-identifiers: [iCloud.io.artnim.stint]
+        com.apple.developer.icloud-services: [CloudKit]
+        aps-environment: production
     settings:
       base:
         SWIFT_VERSION: "5.0"
@@ -38,14 +41,17 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CURRENT_PROJECT_VERSION: "1"
       configs:
-        # local builds: ad-hoc signed, no certificate needed
+        # local builds: automatic signing with the development team (iCloud needs a real identity)
         Debug:
-          CODE_SIGN_IDENTITY: "-"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: 76C3CLR3D5
           ENABLE_HARDENED_RUNTIME: false
         # distribution: Developer ID + hardened runtime + secure timestamp, notarized by scripts/release.sh
         Release:
           CODE_SIGN_IDENTITY: "Developer ID Application"
           DEVELOPMENT_TEAM: 76C3CLR3D5
+          PROVISIONING_PROFILE_SPECIFIER: "Stint Developer ID"
           ENABLE_HARDENED_RUNTIME: true
           OTHER_CODE_SIGN_FLAGS: "--timestamp"
           # `xcodebuild build` otherwise injects get-task-allow, which notarization rejects

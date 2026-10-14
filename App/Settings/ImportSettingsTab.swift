@@ -19,6 +19,7 @@ struct ImportSettingsTab: View {
                     let r = try CSVImporter(database: state.db, timeZone: .current).importFile(at: url)
                     result = "Imported \(r.imported), duplicates \(r.skippedDuplicates), breaks \(r.skippedBreaks), unfinished \(r.skippedUnfinished)."
                     state.refresh()
+                    state.scheduleSync()
                 } catch {
                     result = "Import failed: \(error)"
                 }

@@ -133,6 +133,13 @@ public final class AppDatabase {
             // merge; a remote running stint must be storable alongside a local one until then.
             try db.drop(index: "entry_one_running")
         }
+        // Local metadata, never synced: CloudKit change tags per record.
+        m.registerMigration("v4-sync-meta") { db in
+            try db.create(table: "syncMeta") { t in
+                t.column("recordName", .text).primaryKey()
+                t.column("systemFields", .blob).notNull()
+            }
+        }
         return m
     }
 }
