@@ -123,8 +123,10 @@ used by `notarytool`).
 Stint was designed and built by Martin Hans together with Claude, Anthropic's coding
 assistant: the design discussion, the implementation plan, the code and its reviews were
 done in Claude Code sessions, and every commit carries a `Claude-Session` link to the
-session it came from. The report layout and rounding rules follow a Python tool Martin
-used before; the numbers were verified against it.
+session it came from. Besides being the tool Martin tracks his own time with, the project
+is how he is learning Swift, so expect the code to be read and reworked as that goes on.
+The report layout and rounding rules follow a Python tool Martin used before; the numbers
+were verified against it.
 
 ## License
 
