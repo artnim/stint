@@ -29,8 +29,19 @@ targets:
       base:
         SWIFT_VERSION: "5.0"
         SWIFT_STRICT_CONCURRENCY: minimal
-        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
-        ENABLE_HARDENED_RUNTIME: false
         PRODUCT_BUNDLE_IDENTIFIER: io.artnim.timetracker
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+      configs:
+        # local builds: ad-hoc signed, no certificate needed
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          ENABLE_HARDENED_RUNTIME: false
+        # distribution: Developer ID + hardened runtime + secure timestamp, notarized by scripts/release.sh
+        Release:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          DEVELOPMENT_TEAM: 76C3CLR3D5
+          ENABLE_HARDENED_RUNTIME: true
+          OTHER_CODE_SIGN_FLAGS: "--timestamp"
