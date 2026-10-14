@@ -77,8 +77,11 @@ public actor SyncEngine {
         }
     }
 
+    /// Stamps are compared at millisecond resolution: GRDB stores milliseconds, CloudKit hands back floating Dates.
+    private static func ms(_ d: Date) -> Int64 { Int64((d.timeIntervalSince1970 * 1000).rounded()) }
+
     static func localWins(_ lAt: Date, _ lBy: String, _ rAt: Date, _ rBy: String) -> Bool {
-        lAt > rAt || (lAt == rAt && lBy > rBy)
+        ms(lAt) > ms(rAt) || (ms(lAt) == ms(rAt) && lBy > rBy)
     }
 
     /// Returns true when the local row changed.
@@ -111,7 +114,7 @@ public actor SyncEngine {
             let remoteAt = r.date("modifiedAt") ?? .distantPast
             let remoteBy = r.string("modifiedBy") ?? ""
             if let local = try Setting.fetchOne(db, key: r.name) {
-                if local.modifiedAt == remoteAt && local.modifiedBy == remoteBy { return false }
+                if ms(local.modifiedAt) == ms(remoteAt) && local.modifiedBy == remoteBy { return false }
                 if localWins(local.modifiedAt, local.modifiedBy, remoteAt, remoteBy) {
                     try requeueIfIdle(db, table: "setting", uuid: r.name, at: local.modifiedAt)
                     return false
@@ -131,7 +134,7 @@ public actor SyncEngine {
         let remoteBy = r.string("modifiedBy") ?? ""
         if var local: T = try db.fetchByUUID(uuid: r.name) {
             if local.deletedAt != nil { return false }                                  // R4: pending delete wins
-            if local.modifiedAt == remoteAt && local.modifiedBy == remoteBy {                  // R9: already applied
+            if ms(local.modifiedAt) == ms(remoteAt) && local.modifiedBy == remoteBy {                  // R9: already applied
                 return try refreshReferences(r, in: db)    // ...except a re-sent row whose parent uuid changed (R16)
             }
             if localWins(local.modifiedAt, local.modifiedBy, remoteAt, remoteBy) {           // R3: ours goes back up

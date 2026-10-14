@@ -74,6 +74,14 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(try b.db.allProjects()[0].name, winner)
     }
 
+    // Stamps within a millisecond are equal (GRDB text vs CloudKit floating Dates): the tie-break decides.
+    func testSubMillisecondDifferenceIsATie() {
+        let local = t0, remote = t0.addingTimeInterval(0.0001)
+        XCTAssertTrue(SyncEngine.localWins(local, "b", remote, "a"))
+        XCTAssertFalse(SyncEngine.localWins(local, "a", remote, "b"))
+        XCTAssertFalse(SyncEngine.localWins(local, "a", t0.addingTimeInterval(0.002), "a"))
+    }
+
     // R4: a deletion on A beats a later edit on B.
     func testRemoteDeleteBeatsLocalEdit() async throws {
         let (_, _, _, e) = try seedA()

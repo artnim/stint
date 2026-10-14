@@ -23,13 +23,6 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
         NSHumanReadableCopyright: ""
-    entitlements:
-      path: App/Stint.entitlements
-      properties:
-        com.apple.security.app-sandbox: false
-        com.apple.developer.icloud-container-identifiers: [iCloud.io.artnim.stint]
-        com.apple.developer.icloud-services: [CloudKit]
-        aps-environment: production
     settings:
       base:
         SWIFT_VERSION: "5.0"
@@ -43,6 +36,8 @@ targets:
       configs:
         # local builds: automatic signing with the development team (iCloud needs a real identity)
         Debug:
+          # checked-in plists (xcodegen's generated entitlements would override a per-config path): Debug = development push
+          CODE_SIGN_ENTITLEMENTS: App/Stint.entitlements
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: 76C3CLR3D5
@@ -51,6 +46,8 @@ targets:
         Release:
           CODE_SIGN_IDENTITY: "Developer ID Application"
           DEVELOPMENT_TEAM: 76C3CLR3D5
+          # Release entitlements: push = production, CloudKit = Production (base entitlements are not injected)
+          CODE_SIGN_ENTITLEMENTS: App/Stint.release.entitlements
           PROVISIONING_PROFILE_SPECIFIER: "Stint Developer ID"
           ENABLE_HARDENED_RUNTIME: true
           OTHER_CODE_SIGN_FLAGS: "--timestamp"

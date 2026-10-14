@@ -41,18 +41,31 @@ final class AppState {
         periodicSync = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.syncNow(reason: "periodic") }
         }
+        NotificationCenter.default.addObserver(forName: CloudKitTransport.accountChangedNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in await self?.syncNow(reason: "account changed") }
+        }
         Task { await syncNow(reason: "launch") }
     }
 
     func syncNow(reason: String) async {
         guard let transport, let engine else { return }
-        guard await transport.accountAvailable() else { syncStatus = "Sync off: not signed in to iCloud"; return }
+        let available = await transport.accountAvailable()
+        guard !Task.isCancelled else { return }   // a superseded debounce must not report "not signed in"
+        guard available else { syncStatus = "Sync off: not signed in to iCloud"; return }
         do {
+            // R11: a different iCloud account keeps the local data and stops syncing
+            let user = try await transport.userRecordName()
+            if let stored = try db.setting("syncUserRecordID"), !stored.isEmpty {
+                guard stored == user else { syncStatus = "iCloud account changed, sync stopped"; return }
+            } else {
+                try db.setSetting("syncUserRecordID", user)
+            }
             try await transport.prepare()
             let s = try await engine.sync()
             refresh()
             let stamp = Date().formatted(date: .omitted, time: .shortened)
             syncStatus = "Synced \(stamp): \(s.pushed) up, \(s.pulled) down" + (s.deleted > 0 ? ", \(s.deleted) deleted" : "")
+                + (s.failed > 0 ? ", \(s.failed) failed" : "")
         } catch {
             syncStatus = "Sync problem: \(error.localizedDescription)"
         }

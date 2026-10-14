@@ -18,6 +18,11 @@ private final class SaveAccumulator: @unchecked Sendable {
     var saved: [(String, Data)] = []
 }
 
+private final class DeleteAccumulator: @unchecked Sendable {
+    var done: [String] = []
+    var failures: [String] = []
+}
+
 public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
     public static let zoneName = "stint"
     static let boolFields: Set<String> = ["archived"]
@@ -25,7 +30,11 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
     let database: CKDatabase
     let zoneID: CKRecordZone.ID
     private let appDatabase: AppDatabase
+    /// Unsynchronised on purpose: `SyncEngine` is an actor with single-flight cycles, so it serialises every
+    /// transport call (prepare, fetch, save, delete are only reached from one cycle at a time).
     private var prepared = false
+    /// CloudKit rejects modify operations above 400 records (`.limitExceeded`).
+    static let chunkSize = 400
 
     public init(containerIdentifier: String = "iCloud.io.artnim.stint", database appDatabase: AppDatabase) {
         self.appDatabase = appDatabase
@@ -38,6 +47,14 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         (try? await container.accountStatus()) == .available
     }
 
+    /// Posted when the iCloud account changes; the app listens without importing CloudKit itself.
+    public static var accountChangedNotification: Notification.Name { .CKAccountChanged }
+
+    /// The iCloud user's record name, stable per Apple ID; used to detect an account switch (R11).
+    public func userRecordName() async throws -> String {
+        try await container.userRecordID().recordName
+    }
+
     /// Creates the zone and the change subscription once per process.
     public func prepare() async throws {
         guard !prepared else { return }
@@ -46,15 +63,47 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
         sub.notificationInfo = info
-        do { _ = try await database.save(sub) } catch let e as CKError where e.code == .serverRejectedRequest {
-            // already exists with the same ID
-        }
+        _ = try await database.save(sub)    // saving an existing subscription ID succeeds
         prepared = true
     }
 
     // MARK: SyncTransport
 
     public func fetchChanges(since token: String?) async throws -> SyncChanges {
+        do {
+            return try await fetchOnce(since: token)
+        } catch {
+            switch Self.code(of: error) {
+            case .changeTokenExpired:
+                return try await fetchOnce(since: nil)       // full refetch; LWW makes the replay safe
+            case .zoneNotFound, .userDeletedZone:
+                prepared = false
+                try resetLocalSyncState()
+                try await prepare()
+                return try await fetchOnce(since: nil)
+            default:
+                throw error
+            }
+        }
+    }
+
+    /// The code of a CKError, looking through a `.partialFailure` that wraps a single zone error.
+    static func code(of error: Error) -> CKError.Code? {
+        guard let e = error as? CKError else { return nil }
+        if e.code == .partialFailure, let inner = e.partialErrorsByItemID?.values.compactMap({ $0 as? CKError }).first {
+            return inner.code
+        }
+        return e.code
+    }
+
+    private func resetLocalSyncState() throws {
+        try appDatabase.write { db in
+            try db.execute(sql: "DELETE FROM syncMeta")
+            try db.execute(sql: "DELETE FROM setting WHERE key = ?", arguments: [SyncEngine.tokenKey])
+        }
+    }
+
+    private func fetchOnce(since token: String?) async throws -> SyncChanges {
         let config = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
         config.previousServerChangeToken = try token.map(Self.decodeToken)
         let op = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID], configurationsByRecordZoneID: [zoneID: config])
@@ -92,6 +141,14 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
     }
 
     public func save(_ records: [SyncRecord]) async throws -> [SyncRecordID: SyncSaveOutcome] {
+        var out: [SyncRecordID: SyncSaveOutcome] = [:]
+        for start in stride(from: 0, to: records.count, by: Self.chunkSize) {
+            out.merge(try await saveChunk(Array(records[start..<min(start + Self.chunkSize, records.count)]))) { $1 }
+        }
+        return out
+    }
+
+    private func saveChunk(_ records: [SyncRecord]) async throws -> [SyncRecordID: SyncSaveOutcome] {
         let stored = try readMeta(names: records.map(\.name))
         let ck = records.map { r -> CKRecord in
             if let data = stored[r.name], let base = Self.decodeSystemFields(data), base.recordType == r.type {
@@ -131,20 +188,37 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         return acc.out
     }
 
+    /// `.unknownItem` counts as deleted (already gone). Any other per-record failure makes the call throw after
+    /// all chunks ran, so the engine keeps the whole delete batch queued and retries it next cycle.
     public func delete(_ ids: [SyncRecordID]) async throws {
-        let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: ids.map { CKRecord.ID(recordName: $0.name, zoneID: zoneID) })
-        op.isAtomic = false
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            op.modifyRecordsResultBlock = { result in
+        var firstFailure: String?
+        for start in stride(from: 0, to: ids.count, by: Self.chunkSize) {
+            let chunk = Array(ids[start..<min(start + Self.chunkSize, ids.count)])
+            let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: chunk.map { CKRecord.ID(recordName: $0.name, zoneID: zoneID) })
+            op.isAtomic = false
+            let acc = DeleteAccumulator()
+            op.perRecordDeleteBlock = { id, result in
                 switch result {
-                case .success: cont.resume()
+                case .success: acc.done.append(id.recordName)
                 case .failure(let error):
-                    if let e = error as? CKError, e.code == .partialFailure || e.code == .unknownItem { cont.resume() } else { cont.resume(throwing: error) }
+                    if let e = error as? CKError, e.code == .unknownItem { acc.done.append(id.recordName) }
+                    else { acc.failures.append(error.localizedDescription) }
                 }
             }
-            database.add(op)
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                op.modifyRecordsResultBlock = { result in
+                    switch result {
+                    case .success: cont.resume()
+                    case .failure(let error):
+                        if let e = error as? CKError, e.code == .partialFailure { cont.resume() } else { cont.resume(throwing: error) }
+                    }
+                }
+                database.add(op)
+            }
+            try writeMeta(store: [], remove: acc.done)
+            firstFailure = firstFailure ?? acc.failures.first
         }
-        try writeMeta(store: [], remove: ids.map(\.name))
+        if let firstFailure { throw CKError(.partialFailure, userInfo: [NSLocalizedDescriptionKey: "delete failed: \(firstFailure)"]) }
     }
 
     static func outcome(for error: Error) -> SyncSaveOutcome {
@@ -198,9 +272,9 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
 
     // MARK: mapping
 
-    // R13: `save` sets only the fields this client knows. A new record is built fresh; an existing one is
-    // rebuilt from stored system fields, so unknown server fields are not sent. When a field is added in a
-    // later version, `save` must fetch-then-modify so older clients' fields are not lost.
+    // R13: with `.ifServerRecordUnchanged` and a record rebuilt from stored system fields, only the keys set
+    // here are uploaded, so fields this version does not know are preserved on the server. A record without
+    // a stored tag is new and built fresh.
     static func ckRecord(from r: SyncRecord, zoneID: CKRecordZone.ID) -> CKRecord {
         apply(r, to: CKRecord(recordType: r.type, recordID: CKRecord.ID(recordName: r.name, zoneID: zoneID)))
     }
