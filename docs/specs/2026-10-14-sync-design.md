@@ -1,7 +1,7 @@
 # Sync and iPhone companion — design
 
 Date: 2026-10-14
-Status: draft for review
+Status: approved (assumptions confirmed, open points decided 2026-10-14)
 
 ## Goal
 
@@ -19,7 +19,7 @@ move.
 - Conflicts resolve per row by last-writer-wins. No field-level merging.
 - The phone does not render PDFs in the first version.
 
-## Assumptions to confirm
+## Assumptions (confirmed)
 
 1. One iCloud account, your own. Sharing data between accounts is out of scope.
 2. GitHub tokens travel through iCloud Keychain (synchronizable items), so both devices
@@ -137,6 +137,22 @@ CloudKit record fields are only ever added. A device running an older version ig
 fields it does not know and preserves them on push by updating the fetched record rather
 than building a new one.
 
+### R14 The phone keeps a window, the Mac keeps everything
+
+The phone holds entries of the current month and the two months before it. After every
+sync cycle it prunes finished entries that start before that window. Pruning is a local
+delete that bypasses the outbox (R5 does not apply), so it never reaches CloudKit or the
+Mac. CloudKit itself keeps the whole history; the Mac applies every change. Clients,
+projects, repos and settings are never pruned. A pruned entry that is edited on the Mac
+comes back to the phone with that edit and is pruned again at the next cycle, which is
+harmless.
+
+### R15 Month total on the phone
+
+The phone's Stint screen shows the current month's total: the sum of the raw durations of
+finished entries in the window plus the running stint's elapsed time. It is unrounded and
+says so ("exact; the report rounds"), because rounding is a report-time decision.
+
 ---
 
 ## 2. Data model changes (migration 3)
@@ -183,10 +199,11 @@ than building a new one.
 - Mac: a status line in Settings → General (last sync, problems), the iCloud entitlement,
   a provisioning profile for Developer ID distribution with iCloud, and a "Sync now"
   button for debugging.
-- iPhone: SwiftUI, sharing TimeCore. Screens: Stint (running entry, Stop, Recent, assigned
-  issues with search), Entries (list by day, edit, delete with confirmation), Settings
-  (name, GitHub accounts, sync status). No reports, no CSV import. Starting from an issue,
-  the search, and the data rules are the same code as on the Mac.
+- iPhone: SwiftUI, sharing TimeCore. Screens: Stint (running entry, Stop, the month total
+  per R15, Recent, assigned issues with search), Entries (the three-month window by day,
+  edit, delete with confirmation), Settings (name, GitHub accounts, sync status). No
+  reports, no CSV import. Starting from an issue, the search, and the data rules are the
+  same code as on the Mac.
 - Keychain: GitHub account items become synchronizable so the phone gets the tokens.
 
 ## 6. Signing and distribution
@@ -213,7 +230,9 @@ than building a new one.
   two devices. Each rule gets a test: identity on insert (R1), per-row LWW including the
   tie-break (R3), delete beats edit both ways (R4), outbox atomicity (R5), pull-then-push
   ordering (R6), two offline starts converge on the later one (R7), parent ordering and
-  null references (R8), replaying a batch (R9), first sync of a populated database (R12).
+  null references (R8), replaying a batch (R9), first sync of a populated database (R12),
+  pruning outside the window without producing outbox entries (R14), month total with a
+  running stint (R15).
 - A convergence test: random interleaved edits on both devices with random sync points
   end with identical tables on both.
 - No iOS UI tests. The Mac parity gate is unaffected because reporting code does not
@@ -229,8 +248,7 @@ than building a new one.
 5. iPhone app.
 6. Release plumbing (profile, CI secret, CloudKit production schema).
 
-## Open points for you
+## Decided
 
-- The 90-day question: should the phone keep the whole history or only recent months?
-  The spec assumes everything syncs; a cut-off is easy to add later.
-- Whether the phone should also show the month's total so far. Cheap, reads only.
+- The phone keeps the current month plus two (R14); the Mac and CloudKit keep everything.
+- The phone shows the month's running total, unrounded (R15).
