@@ -11,7 +11,7 @@ targets:
   Stint:
     type: application
     platform: macOS
-    sources: [App]
+    sources: [App, Shared]
     dependencies:
       - package: TimeCore
         product: TimeCore

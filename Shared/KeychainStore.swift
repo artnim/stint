@@ -17,43 +17,54 @@ enum KeychainStore {
 
     struct KeychainError: Error { let status: OSStatus }
 
-    private static func query(_ account: String, service: String = service) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
+    private static func query(_ account: String, service: String = service, synchronizable: Bool = false) -> [String: Any] {
+        var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                kSecAttrService as String: service,
+                                kSecAttrAccount as String: account]
+        if synchronizable {
+            q[kSecAttrSynchronizable as String] = true
+            #if os(macOS)
+            q[kSecUseDataProtectionKeychain as String] = true   // synchronizable items live in the data-protection keychain
+            #endif
+        }
+        return q
     }
 
     static func read(_ account: String) -> String? {
-        if let value = read(account, service: service) { return value }
-        // first launch after the rename: adopt the item stored under the old name
-        if let legacy = read(account, service: legacyService) {
-            try? write(account, legacy)
-            SecItemDelete(query(account, service: legacyService) as CFDictionary)
-            return legacy
+        if let value = read(account, service: service, synchronizable: true) { return value }
+        // first launch after enabling sync, or after the rename: adopt the local item.
+        // Delete the legacy item only once the synchronizable write succeeded (unsigned builds
+        // get errSecMissingEntitlement and must not lose the token).
+        for svc in [service, legacyService] {
+            if let legacy = read(account, service: svc, synchronizable: false) {
+                if (try? write(account, legacy)) != nil {
+                    SecItemDelete(query(account, service: svc, synchronizable: false) as CFDictionary)
+                }
+                return legacy
+            }
         }
         return nil
     }
 
-    private static func read(_ account: String, service: String) -> String? {
-        var q = query(account, service: service)
+    private static func read(_ account: String, service: String, synchronizable: Bool) -> String? {
+        var q = query(account, service: service, synchronizable: synchronizable)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data else { return nil }
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     static func write(_ account: String, _ value: String) throws {
         delete(account)
-        var q = query(account)
+        var q = query(account, synchronizable: true)
         q[kSecValueData as String] = Data(value.utf8)
         let status = SecItemAdd(q as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }
 
     static func delete(_ account: String) {
-        SecItemDelete(query(account) as CFDictionary)
+        SecItemDelete(query(account, synchronizable: true) as CFDictionary)
     }
 
     // MARK: GitHub accounts
