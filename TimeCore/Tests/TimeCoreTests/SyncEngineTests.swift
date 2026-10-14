@@ -172,31 +172,64 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(s.pulled, 0)
     }
 
-    // R16: two devices add the same repo offline; the smaller uuid survives everywhere.
-    func testSameRepoOnTwoDevicesCollapses() async throws {
-        let ra = try a.db.addRepo(fullName: "acme/web"), rb = try b.db.addRepo(fullName: "acme/web")
-        XCTAssertNotEqual(ra.uuid, rb.uuid)
-        for d in [a!, b!, a!, b!] { _ = try await d.engine.sync() }
-        let va = try a.db.allRepos(), vb = try b.db.allRepos()
-        XCTAssertEqual(va.count, 1); XCTAssertEqual(vb.count, 1)
-        XCTAssertEqual(va[0].uuid, min(ra.uuid, rb.uuid)); XCTAssertEqual(vb[0].uuid, va[0].uuid)
-        let repos = await server.records().keys.filter { $0.type == "Repo" }
-        XCTAssertEqual(repos.map(\.name), [va[0].uuid])
+    // R16: both uuid orders, so the guard path and the re-point path each run every time.
+    private func collapseRepos(aUUID: String, bUUID: String, deleteOnA: Bool = false) async throws {
+        var ra = Repo(owner: "acme", name: "web", uuid: aUUID), rb = Repo(owner: "acme", name: "web", uuid: bUUID)
+        try a.db.insert(&ra); try b.db.insert(&rb)
+        if deleteOnA { try a.db.delete(ra) }
+        for d in (deleteOnA ? [b!, a!, b!, a!] : [a!, b!, a!, b!, a!]) { _ = try await d.engine.sync() }
+        let surviving = min(aUUID, bUUID)
+        if deleteOnA {
+            XCTAssertEqual(try a.db.allRepos(), []); XCTAssertEqual(try b.db.allRepos(), [])
+        } else {
+            let va = try a.db.allRepos(), vb = try b.db.allRepos()
+            XCTAssertEqual(va.map(\.uuid), [surviving]); XCTAssertEqual(vb.map(\.uuid), [surviving])
+        }
+        let repos = await server.records().keys.filter { $0.type == "Repo" }.map(\.name)
+        XCTAssertEqual(repos, deleteOnA ? [] : [surviving])
         XCTAssertEqual(try a.db.pendingOutbox(), []); XCTAssertEqual(try b.db.pendingOutbox(), [])
     }
+    func testSameRepoCollapsesAHasSmallerUUID() async throws { try await collapseRepos(aUUID: "A-1", bUUID: "B-1") }
+    func testSameRepoCollapsesBHasSmallerUUID() async throws { try await collapseRepos(aUUID: "B-1", bUUID: "A-1") }
+    func testSameRepoCollapsesWithDeletedCopyOnA() async throws { try await collapseRepos(aUUID: "A-1", bUUID: "B-1", deleteOnA: true) }
+    func testSameRepoCollapsesWithDeletedCopyOnAReversed() async throws { try await collapseRepos(aUUID: "B-1", bUUID: "A-1", deleteOnA: true) }
 
-    // R16: same for entries with one import key.
-    func testSameImportedKeyCollapses() async throws {
-        var ea = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), importedKey: "k")
-        var eb = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), importedKey: "k")
+    private func collapseEntries(aUUID: String, bUUID: String, deleteOnA: Bool = false) async throws {
+        var ea = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), importedKey: "k", uuid: aUUID)
+        var eb = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), importedKey: "k", uuid: bUUID)
         try a.db.insert(&ea); try b.db.insert(&eb)
-        for d in [a!, b!, a!, b!] { _ = try await d.engine.sync() }
+        if deleteOnA { try a.db.delete(ea) }
+        for d in (deleteOnA ? [b!, a!, b!, a!] : [a!, b!, a!, b!, a!]) { _ = try await d.engine.sync() }
         let range = (t0.addingTimeInterval(-10), t0.addingTimeInterval(86400))
         let va = try a.db.finishedEntries(from: range.0, to: range.1), vb = try b.db.finishedEntries(from: range.0, to: range.1)
-        XCTAssertEqual(va.count, 1); XCTAssertEqual(vb.count, 1)
-        XCTAssertEqual(va[0].uuid, min(ea.uuid, eb.uuid)); XCTAssertEqual(vb[0].uuid, va[0].uuid)
-        let entries = await server.records().keys.filter { $0.type == "Entry" }
-        XCTAssertEqual(entries.count, 1)
+        let entries = await server.records().keys.filter { $0.type == "Entry" }.map(\.name)
+        if deleteOnA {
+            XCTAssertEqual(va, []); XCTAssertEqual(vb, []); XCTAssertEqual(entries, [])
+        } else {
+            XCTAssertEqual(va.map(\.uuid), [min(aUUID, bUUID)]); XCTAssertEqual(vb.map(\.uuid), [min(aUUID, bUUID)])
+            XCTAssertEqual(entries, [min(aUUID, bUUID)])
+        }
+        XCTAssertEqual(try a.db.pendingOutbox(), []); XCTAssertEqual(try b.db.pendingOutbox(), [])
+    }
+    func testSameImportedKeyCollapsesAHasSmallerUUID() async throws { try await collapseEntries(aUUID: "A-1", bUUID: "B-1") }
+    func testSameImportedKeyCollapsesBHasSmallerUUID() async throws { try await collapseEntries(aUUID: "B-1", bUUID: "A-1") }
+    func testSameImportedKeyCollapsesWithDeletedCopyOnA() async throws { try await collapseEntries(aUUID: "A-1", bUUID: "B-1", deleteOnA: true) }
+    func testSameImportedKeyCollapsesWithDeletedCopyOnAReversed() async throws { try await collapseEntries(aUUID: "B-1", bUUID: "A-1", deleteOnA: true) }
+
+    // R16: a child pushed under the losing repo uuid is re-sent with the surviving one.
+    func testChildrenAreRequeuedAfterRepoRepoint() async throws {
+        var rb = Repo(owner: "acme", name: "web", uuid: "B-1"); try b.db.insert(&rb)
+        var eb = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), repoId: rb.id); try b.db.insert(&eb)
+        _ = try await b.engine.sync()
+        var ra = Repo(owner: "acme", name: "web", uuid: "A-1"); try a.db.insert(&ra)
+        _ = try await a.engine.sync()
+        for d in [b!, a!, b!] { _ = try await d.engine.sync() }
+        let range = (t0.addingTimeInterval(-10), t0.addingTimeInterval(86400))
+        let onA = try a.db.finishedEntries(from: range.0, to: range.1)
+        XCTAssertEqual(onA.count, 1)
+        XCTAssertEqual(onA[0].repoId, try a.db.allRepos()[0].id)
+        let rec = await server.records().values.first { $0.type == "Entry" }
+        XCTAssertEqual(rec?.string("repoUUID"), "A-1")
         XCTAssertEqual(try a.db.pendingOutbox(), []); XCTAssertEqual(try b.db.pendingOutbox(), [])
     }
 

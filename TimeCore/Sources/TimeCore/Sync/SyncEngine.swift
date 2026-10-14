@@ -28,9 +28,11 @@ public actor SyncEngine {
     /// Single-flight: a call made while a cycle is running awaits that cycle's result.
     public func sync() async throws -> SyncSummary {
         if let running = inFlight { return try await running.value }
-        let task = Task { try await self.runCycle() }
+        let task = Task {
+            defer { self.inFlight = nil }                    // cleared before the result is delivered
+            return try await self.runCycle()
+        }
         inFlight = task
-        defer { inFlight = nil }
         return try await task.value
     }
 
@@ -129,7 +131,9 @@ public actor SyncEngine {
         let remoteBy = r.string("modifiedBy") ?? ""
         if var local: T = try db.fetchByUUID(uuid: r.name) {
             if local.deletedAt != nil { return false }                                  // R4: pending delete wins
-            if local.modifiedAt == remoteAt && local.modifiedBy == remoteBy { return false }   // R9: already applied
+            if local.modifiedAt == remoteAt && local.modifiedBy == remoteBy {                  // R9: already applied
+                return try refreshReferences(r, in: db)    // ...except a re-sent row whose parent uuid changed (R16)
+            }
             if localWins(local.modifiedAt, local.modifiedBy, remoteAt, remoteBy) {           // R3: ours goes back up
                 try requeueIfIdle(db, table: T.databaseTableName, uuid: r.name, at: local.modifiedAt)
                 return false
@@ -165,12 +169,40 @@ public actor SyncEngine {
         try local.update(db)
         try db.execute(sql: "DELETE FROM outbox WHERE tableName = ? AND uuid = ?", arguments: [table, old])
         try db.logChange(table: table, uuid: old, op: .delete, now: local.modifiedAt)    // the old server record goes away
+        if local is Repo, let repoId = local.id {                                        // children already pushed carry the old repoUUID
+            for e in try Entry.filter(Column("repoId") == repoId && Column("deletedAt") == nil).fetchAll(db) {
+                try db.logChange(table: "entry", uuid: e.uuid, op: .upsert, now: e.modifiedAt)
+            }
+        }
         if let deletedAt = local.deletedAt {
             try db.logChange(table: table, uuid: r.name, op: .delete, now: deletedAt)    // our pending deletion carries over
         } else if !remoteWins {
             try requeueIfIdle(db, table: table, uuid: r.name, at: local.modifiedAt)
         }
         return remoteWins
+    }
+
+    /// Same stamps, so the fields are identical; only adopt references that now resolve (never null one out).
+    private static func refreshReferences(_ r: SyncRecord, in db: Database) throws -> Bool {
+        switch r.type {
+        case "Entry":
+            guard var e: Entry = try db.fetchByUUID(uuid: r.name) else { return false }
+            var changed = false
+            if let p = try resolve(Project.self, uuid: r.string("projectUUID"), in: db), p != e.projectId { e.projectId = p; changed = true }
+            if let x = try resolve(Repo.self, uuid: r.string("repoUUID"), in: db), x != e.repoId { e.repoId = x; changed = true }
+            if changed { try e.update(db) }
+            return changed
+        case "Repo":
+            guard var x: Repo = try db.fetchByUUID(uuid: r.name),
+                  let p = try resolve(Project.self, uuid: r.string("projectUUID"), in: db), p != x.projectId else { return false }
+            x.projectId = p; try x.update(db); return true
+        case "Project":
+            guard var x: Project = try db.fetchByUUID(uuid: r.name),
+                  let c = try resolve(Client.self, uuid: r.string("clientUUID"), in: db), c != x.clientId else { return false }
+            x.clientId = c; try x.update(db); return true
+        default:
+            return false
+        }
     }
 
     private static func requeueIfIdle(_ db: Database, table: String, uuid: String, at: Date) throws {
