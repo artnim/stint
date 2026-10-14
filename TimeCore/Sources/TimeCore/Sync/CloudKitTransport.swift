@@ -47,6 +47,12 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         (try? await container.accountStatus()) == .available
     }
 
+    /// True when a remote notification's payload is a CloudKit notification (the zone subscription's push);
+    /// lets the app recognise sync pushes without importing CloudKit itself.
+    public static func isSyncNotification(_ userInfo: [AnyHashable: Any]) -> Bool {
+        CKNotification(fromRemoteNotificationDictionary: userInfo) != nil
+    }
+
     /// Posted when the iCloud account changes; the app listens without importing CloudKit itself.
     public static var accountChangedNotification: Notification.Name { .CKAccountChanged }
 
@@ -75,8 +81,13 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         } catch {
             switch Self.code(of: error) {
             case .changeTokenExpired:
-                // full refetch; LWW makes the replay safe. Limitation: a nil-token fetch returns only live records,
-                // so deletions made on the server in the meantime are not seen by this device.
+                // Treated like zone loss for local state (minus recreating the zone): the stored change tags may
+                // belong to records that no longer exist (e.g. another device reset the zone), and a save with such
+                // a tag would come back .unknownItem and hard-delete the local row. So all tags and the token are
+                // dropped and every live row is requeued; the nil-token refetch re-stores tags for what the server
+                // has, and everything else goes up as a new record. Accepted: rows deleted on the server during the
+                // gap are resurrected (visible, fixable). Not accepted: silently deleting local history.
+                try resetLocalSyncState()
                 return try await fetchOnce(since: nil)
             case .zoneNotFound, .userDeletedZone:
                 prepared = false
@@ -98,6 +109,7 @@ public final class CloudKitTransport: SyncTransport, @unchecked Sendable {
         return e.code
     }
 
+    /// Drops all change tags and the token and requeues every live row, in one write transaction.
     private func resetLocalSyncState() throws {
         try appDatabase.write { db in
             try db.execute(sql: "DELETE FROM syncMeta")

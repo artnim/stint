@@ -23,8 +23,19 @@ final class WindowTests: XCTestCase {
         // inserted raw after the edit: start() would stop it and log that stop, and it must stay running
         try db.write { db in var e = Entry(description: "running since june", startUTC: local("2026-06-01 09:00")); try e.insert(db) }
 
+        // every entry has a change tag, as after a pull
+        try db.write { db in
+            for uuid in try String.fetchAll(db, sql: "SELECT uuid FROM entry") {
+                try db.execute(sql: "INSERT INTO syncMeta (recordName, systemFields) VALUES (?, ?)", arguments: [uuid, Data([1])])
+            }
+        }
+        let oldUUID = try db.read { try String.fetchOne($0, sql: "SELECT uuid FROM entry WHERE description = 'old'") }!
+
         let pruned = try db.pruneEntries(startingBefore: cutoff)
         XCTAssertEqual(pruned, 1)
+        let tags = try db.read { try String.fetchAll($0, sql: "SELECT recordName FROM syncMeta") }
+        XCTAssertFalse(tags.contains(oldUUID), "the pruned entry's change tag goes with it")
+        XCTAssertEqual(tags.count, 3, "the tags of the kept entries stay")
         let left = try db.entries(from: local("2026-01-01 00:00"), to: local("2026-12-31 00:00")).map(\.description)
         XCTAssertEqual(left.sorted(), ["new", "old but edited", "running since june"])
         XCTAssertEqual(try db.pendingOutbox().map(\.op), ["upsert", "upsert"], "unchanged: only the two pending upserts for the edited entry")

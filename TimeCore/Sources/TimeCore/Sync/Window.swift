@@ -11,6 +11,7 @@ public func windowStart(now: Date, months: Int = 3, calendar: Calendar) -> Date 
 extension AppDatabase {
     /// R14: drop finished entries that start before `cutoff`, locally only. Never logs to the outbox
     /// and skips rows that still have pending changes, so nothing is lost on the way to the server.
+    /// The pruned entries' change tags (`syncMeta`) go in the same transaction.
     @discardableResult
     public func pruneEntries(startingBefore cutoff: Date) throws -> Int {
         try write { db in
@@ -18,7 +19,10 @@ extension AppDatabase {
             let victims = try Entry.filter(Column("endUTC") != nil && Column("deletedAt") == nil && Column("startUTC") < cutoff)
                 .fetchAll(db)
                 .filter { !pending.contains($0.uuid) }
-            for e in victims { _ = try e.delete(db) }
+            for e in victims {
+                _ = try e.delete(db)
+                try db.execute(sql: "DELETE FROM syncMeta WHERE recordName = ?", arguments: [e.uuid])   // a returning row brings fresh tags
+            }
             return victims.count
         }
     }

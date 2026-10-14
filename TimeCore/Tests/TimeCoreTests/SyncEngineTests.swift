@@ -259,7 +259,7 @@ final class SyncEngineTests: XCTestCase {
         var eb = try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400))[0]
         try edit(b.db, &eb, at: Date().addingTimeInterval(3600)) { $0.description = "late edit" }
         let ad = a!
-        let racing = HookTransport(server) { _ in
+        let racing = HookTransport(server.device(b.db)) { _ in
             try ad.db.delete(e)
             _ = try await ad.engine.sync()                  // the deletion lands between B's fetch and B's save
         }
@@ -275,13 +275,13 @@ final class SyncEngineTests: XCTestCase {
     // notFound for a setting must not delete it; it stays queued.
     func testNotFoundForSettingKeepsLocalValue() async throws {
         try a.db.setSetting("userName", "Martin")
-        let engine = SyncEngine(database: a.db, transport: HookTransport(server, outcomeOverride: .notFound))
+        let engine = SyncEngine(database: a.db, transport: HookTransport(server.device(a.db), outcomeOverride: .notFound))
         _ = try await engine.sync()
         XCTAssertEqual(try a.db.setting("userName"), "Martin")
         XCTAssertEqual(try a.db.pendingOutbox().count, 1)
     }
 
-    // A local winner whose version was overwritten on the server is pushed again.
+    // A local winner whose push was refused because the server changed underneath it ends up on both devices.
     func testLocalWinnerIsPushedAgain() async throws {
         var (_, p, _, _) = try seedA()
         _ = try await a.engine.sync(); _ = try await b.engine.sync()
@@ -290,9 +290,9 @@ final class SyncEngineTests: XCTestCase {
         try edit(b.db, &pb, at: base.addingTimeInterval(20)) { $0.name = "B newer" }
         try edit(a.db, &p, at: base.addingTimeInterval(10)) { $0.name = "A older" }
         let bd = b!
-        let interleaved = HookTransport(server) { _ in _ = try await bd.engine.sync() }   // B pushes during A's cycle
-        _ = try await SyncEngine(database: a.db, transport: interleaved).sync()           // A's blind save overwrites B's
-        _ = try await b.engine.sync()                                                     // B pulls the older one, wins, re-queues
+        let interleaved = HookTransport(server.device(a.db)) { _ in _ = try await bd.engine.sync() }   // B pushes during A's cycle
+        _ = try await SyncEngine(database: a.db, transport: interleaved).sync()   // A's save carries a stale tag: refused (server changed)
+        _ = try await b.engine.sync()
         _ = try await a.engine.sync()
         XCTAssertEqual(try a.db.allProjects()[0].name, "B newer")
         XCTAssertEqual(try b.db.allProjects()[0].name, "B newer")
@@ -305,7 +305,7 @@ final class SyncEngineTests: XCTestCase {
         var p = try a.db.allProjects()[0]
         try edit(a.db, &p, at: Date().addingTimeInterval(3600)) { $0.name = "first" }
         let ad = a!
-        let editing = HookTransport(server) { _ in
+        let editing = HookTransport(server.device(ad.db)) { _ in
             var q = try ad.db.allProjects()[0]
             try edit(ad.db, &q, at: Date().addingTimeInterval(7200)) { $0.name = "second" }
         }
@@ -335,4 +335,96 @@ final class SyncEngineTests: XCTestCase {
         let calls = await spy.calls
         XCTAssertEqual(calls, ["fetch", "save"])
     }
+
+    // B2: two devices edit the same record; B's push meets A's newer server version, is refused, and heals on the next pull.
+    func testConcurrentEditGetsServerChangedThenConverges() async throws {
+        var (_, p, _, _) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var pb = try b.db.allProjects()[0]
+        let base = Date().addingTimeInterval(3600)
+        try edit(a.db, &p, at: base.addingTimeInterval(10)) { $0.name = "A older" }
+        try edit(b.db, &pb, at: base.addingTimeInterval(20)) { $0.name = "B newer" }
+        let ad = a!
+        let racing = HookTransport(server.device(b.db)) { _ in _ = try await ad.engine.sync() }   // A pushes between B's pull and B's push
+        let refused = try await SyncEngine(database: b.db, transport: racing).sync()
+        XCTAssertEqual(refused.failed, 1, "B's change tag is stale: server changed")
+        XCTAssertEqual(try b.db.pendingOutbox().count, 1)
+        let healed = try await b.engine.sync()                      // pull refreshes the tag, B's stamp wins, push succeeds
+        XCTAssertEqual(healed.failed, 0)
+        XCTAssertEqual(try b.db.pendingOutbox(), [])
+        _ = try await a.engine.sync()
+        XCTAssertEqual(try a.db.allProjects()[0].name, "B newer")
+        XCTAssertEqual(try b.db.allProjects()[0].name, "B newer")
+        let rec = await server.records().values.first { $0.type == "Project" }
+        XCTAssertEqual(rec?.string("name"), "B newer")
+    }
+
+    // B2 / A1: after a local reset (tags and token cleared, everything requeued) every row goes up again and none is deleted.
+    func testResetRequeuePushesEverythingWithoutDeletions() async throws {
+        _ = try seedA()
+        try a.db.setSetting("userName", "Martin")
+        _ = try await a.engine.sync()
+        let before = await server.records().count
+        try a.db.write { db in
+            try db.execute(sql: "DELETE FROM syncMeta")
+            try db.execute(sql: "DELETE FROM setting WHERE key = ?", arguments: [SyncEngine.tokenKey])
+            try AppDatabase.requeueAll(db)
+        }
+        let s = try await a.engine.sync()
+        XCTAssertEqual(s.pushed, before)
+        XCTAssertEqual(s.failed, 0)
+        XCTAssertEqual(try a.db.pendingOutbox(), [])
+        XCTAssertEqual(try a.db.allClients().count, 1); XCTAssertEqual(try a.db.allProjects().count, 1)
+        XCTAssertEqual(try a.db.allRepos().count, 1)
+        XCTAssertEqual(try a.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)).count, 1)
+        let after = await server.records().count
+        XCTAssertEqual(after, before)
+    }
+
+    // A caller that joins a running cycle written after that cycle read the outbox still gets its write pushed.
+    func testJoinedSyncPushesWritesMadeDuringTheRunningCycle() async throws {
+        var first = Client(name: "first"); try a.db.insert(&first)
+        let gate = GateTransport(server)
+        let engine = SyncEngine(database: a.db, transport: gate)
+        let running = Task { try await engine.sync() }
+        await gate.waitUntilBlocked()                      // the cycle has read the outbox and sits in save
+        var second = Client(name: "second"); try a.db.insert(&second)
+        let joined = Task { try await engine.sync() }
+        try await Task.sleep(nanoseconds: 20_000_000)      // let the second call reach the actor and join
+        await gate.release()
+        _ = try await running.value
+        _ = try await joined.value
+        let names = await server.records().keys.map(\.name)
+        XCTAssertTrue(names.contains(second.uuid), "the joined call returned without pushing the later write")
+        XCTAssertEqual(try a.db.pendingOutbox(), [])
+    }
+}
+
+/// Blocks the first save until released, so a test can act while a cycle is in flight.
+actor GateTransport: SyncTransport {
+    let inner: any SyncTransport
+    private(set) var saveCalls = 0
+    private var gate: CheckedContinuation<Void, Never>?
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+    init(_ inner: any SyncTransport) { self.inner = inner }
+
+    func waitUntilBlocked() async {
+        if gate != nil { return }
+        await withCheckedContinuation { blockedWaiters.append($0) }
+    }
+    func release() { released = true; gate?.resume(); gate = nil }
+
+    func fetchChanges(since token: String?) async throws -> SyncChanges { try await inner.fetchChanges(since: token) }
+    func save(_ records: [SyncRecord]) async throws -> [SyncRecordID: SyncSaveOutcome] {
+        saveCalls += 1
+        if saveCalls == 1 && !released {
+            await withCheckedContinuation { c in
+                gate = c
+                blockedWaiters.forEach { $0.resume() }; blockedWaiters = []
+            }
+        }
+        return try await inner.save(records)
+    }
+    func delete(_ ids: [SyncRecordID]) async throws { try await inner.delete(ids) }
 }

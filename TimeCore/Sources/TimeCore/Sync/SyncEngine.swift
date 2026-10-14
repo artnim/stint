@@ -25,15 +25,23 @@ public actor SyncEngine {
 
     private var inFlight: Task<SyncSummary, Error>?
 
-    /// Single-flight: a call made while a cycle is running awaits that cycle's result.
+    /// Single-flight: a call made while a cycle is running awaits that cycle's result. That cycle may have read
+    /// the outbox before the caller's write, so if the outbox is still not empty afterwards, exactly one more
+    /// cycle runs (or is joined, if another caller already started it) before returning.
     public func sync() async throws -> SyncSummary {
-        if let running = inFlight { return try await running.value }
+        guard let running = inFlight else { return try await startCycle().value }
+        let joined = try await running.value
+        guard try !db.pendingOutbox().isEmpty else { return joined }
+        return try await (inFlight ?? startCycle()).value
+    }
+
+    private func startCycle() -> Task<SyncSummary, Error> {
         let task = Task {
             defer { self.inFlight = nil }                    // cleared before the result is delivered
             return try await self.runCycle()
         }
         inFlight = task
-        return try await task.value
+        return task
     }
 
     private func runCycle() async throws -> SyncSummary {

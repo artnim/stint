@@ -26,4 +26,23 @@ final class InMemorySyncServerTests: XCTestCase {
         do { _ = try await server.fetchChanges(since: nil); XCTFail("expected failure") } catch {}
         _ = try await server.fetchChanges(since: nil)   // only the next call fails
     }
+
+    // Change tags: a save carrying a stale or missing version is refused, as CloudKit's .ifServerRecordUnchanged does.
+    func testStaleOrMissingVersionIsRefused() async throws {
+        let server = InMemorySyncServer()
+        let a = server.device(try AppDatabase.inMemory()), b = server.device(try AppDatabase.inMemory())
+        let rec = SyncRecord(type: "Client", name: "u1", fields: ["name": .string("v1")])
+        let first = try await a.save([rec])
+        XCTAssertEqual(first[rec.id], .saved)                         // new recordName
+        let blind = try await b.save([rec])
+        XCTAssertEqual(blind[rec.id], .failed("server changed"))      // b never saw it: no version
+        _ = try await b.fetchChanges(since: nil)                      // pull stores the current version
+        let fresh = try await b.save([rec])
+        XCTAssertEqual(fresh[rec.id], .saved)
+        let stale = try await a.save([rec])
+        XCTAssertEqual(stale[rec.id], .failed("server changed"))      // a's version is now behind
+        try await b.delete([rec.id])
+        let gone = try await a.save([rec])
+        XCTAssertEqual(gone[rec.id], .notFound)
+    }
 }
