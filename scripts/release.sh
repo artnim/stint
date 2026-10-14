@@ -7,6 +7,7 @@
 # One-time setup for notarization (stores an app-specific password in the login keychain,
 # nothing lands in the repo):
 #   xcrun notarytool store-credentials "$NOTARY_PROFILE" --apple-id <apple-id> --team-id 76C3CLR3D5
+# In CI, set NOTARY_KEY_PATH (.p8), NOTARY_KEY_ID and NOTARY_ISSUER_ID instead (App Store Connect API key).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -43,12 +44,19 @@ rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 if [ "$NOTARIZE" = 1 ]; then
-  echo "==> notarizing (profile $NOTARY_PROFILE)"
-  RESULT=$(xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee /dev/stderr)
+  # credentials: an App Store Connect API key via env (CI), else the keychain profile (local)
+  if [ -n "${NOTARY_KEY_PATH:-}" ]; then
+    AUTH=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+    echo "==> notarizing (API key $NOTARY_KEY_ID)"
+  else
+    AUTH=(--keychain-profile "$NOTARY_PROFILE")
+    echo "==> notarizing (profile $NOTARY_PROFILE)"
+  fi
+  RESULT=$(xcrun notarytool submit "$ZIP" "${AUTH[@]}" --wait 2>&1 | tee /dev/stderr)
   if ! grep -q "status: Accepted" <<<"$RESULT"; then
     ID=$(sed -n 's/^ *id: *//p' <<<"$RESULT" | head -1)
     echo "notarization not accepted; log:" >&2
-    [ -n "$ID" ] && xcrun notarytool log "$ID" --keychain-profile "$NOTARY_PROFILE" >&2
+    [ -n "$ID" ] && xcrun notarytool log "$ID" "${AUTH[@]}" >&2
     exit 1
   fi
   echo "==> stapling"

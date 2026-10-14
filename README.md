@@ -40,3 +40,14 @@ One-time setup for notarization (an app-specific password stored in the login ke
 
 `scripts/release.sh --no-notarize` builds and signs without Apple credentials.
 The version comes from `MARKETING_VERSION` in `project.yml`; the build number is the commit count.
+
+### Release via GitHub Actions
+
+Pushing a tag `vX.Y.Z` that matches `MARKETING_VERSION` runs `.github/workflows/release.yml`:
+tests, signed and notarized build via `scripts/release.sh`, and a GitHub release with the zip.
+It needs five repository secrets: `MACOS_CERT_P12_BASE64` and `MACOS_CERT_PASSWORD` (the
+Developer ID Application identity exported from Keychain Access), and
+`APP_STORE_CONNECT_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`
+(an App Store Connect API key with the Developer role, used by `notarytool`).
+
+    git tag v0.1.0 && git push origin v0.1.0
