@@ -59,7 +59,16 @@ public struct CSVImporter {
                 if ["yes", "true", "1"].contains(cell(row, "Break").lowercased()) {
                     result.skippedBreaks += 1; continue
                 }
-                guard let start = parseLocal(cell(row, "Start")), let end = parseLocal(cell(row, "End")), end > start else {
+                // The export's "Duration" (HH:MM:SS) is exact to the second and immune to DST changes;
+                // the local timestamps are not (02:30 → 02:30 across the fall-back hour), so when the
+                // column is present the end is start + duration rather than the parsed End.
+                guard let start = parseLocal(cell(row, "Start")) else { result.skippedUnfinished += 1; continue }
+                let end: Date
+                if let secs = Self.seconds(fromDuration: cell(row, "Duration")), secs > 0 {
+                    end = start.addingTimeInterval(secs)
+                } else if let parsedEnd = parseLocal(cell(row, "End")), parsedEnd > start {
+                    end = parsedEnd
+                } else {
                     result.skippedUnfinished += 1; continue
                 }
                 var desc = cell(row, "Description")
@@ -98,6 +107,14 @@ public struct CSVImporter {
             }
         }
         return result
+    }
+
+    /// "HH:MM:SS" → seconds; nil for anything else (empty cell, decimal, garbage).
+    static func seconds(fromDuration text: String) -> TimeInterval? {
+        let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 3, let h = Int(parts[0]), let m = Int(parts[1]), let s = Int(parts[2]),
+              (0..<60).contains(m), (0..<60).contains(s), h >= 0 else { return nil }
+        return TimeInterval(h * 3600 + m * 60 + s)
     }
 
     static func key(start: Date, end: Date, description: String, project: String) -> String {

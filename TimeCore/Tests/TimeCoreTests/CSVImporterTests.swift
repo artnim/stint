@@ -82,4 +82,21 @@ final class CSVImporterTests: XCTestCase {
         let e = try db.read { try Entry.fetchOne($0) }
         XCTAssertEqual(e?.description, "first")
     }
+
+    func testDurationColumnWinsOverTimestampsAcrossDSTChange() throws {
+        // 2026-10-25: 02:30 CEST -> one real hour -> 02:30 CET. The export writes both as "02:30:00".
+        let text = "Description,Start,End,Duration,Duration (decimal)\n" +
+            "fold,2026-10-25 02:30:00,2026-10-25 02:30:00,01:00:00,1.00\n" +
+            "spring,2026-03-29 01:30:00,2026-03-29 03:30:00,01:00:00,1.00\n" +
+            "plain,2026-08-03 09:00:00,2026-08-03 10:01:24,01:01:24,1.02\n" +
+            "nodur,2026-08-03 11:00:00,2026-08-03 11:30:00,,\n"
+        let r = try importer.importText(text)
+        XCTAssertEqual(r.imported, 4)
+        XCTAssertEqual(r.skippedUnfinished, 0)
+        let byDesc = Dictionary(uniqueKeysWithValues: try db.read { try Entry.fetchAll($0) }.map { ($0.description, $0) })
+        XCTAssertEqual(byDesc["fold"]?.hours ?? 0, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(byDesc["spring"]?.hours ?? 0, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(byDesc["plain"]?.hours ?? 0, 3684.0 / 3600.0, accuracy: 1e-9)
+        XCTAssertEqual(byDesc["nodur"]?.hours ?? 0, 0.5, accuracy: 1e-9)   // no Duration column value: End − Start
+    }
 }
