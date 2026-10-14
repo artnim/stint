@@ -89,7 +89,7 @@ rendering, CSV import, GitHub client); `App/` is a thin SwiftUI layer on top. Te
     cd TimeCore && swift test
 
 One test is environment-gated: `docs/parity.md` describes how the report was verified
-against the Python tool it replaces. Design notes are in `docs/superpowers/`.
+against an independent reference implementation. Design notes are in `docs/design.md`.
 
 ### Release build
 
