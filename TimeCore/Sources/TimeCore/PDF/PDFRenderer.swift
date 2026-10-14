@@ -1,3 +1,4 @@
+#if os(macOS)
 import CoreGraphics
 import CoreText
 import Foundation
@@ -264,3 +265,4 @@ private final class PageWriter {
         }
     }
 }
+#endif

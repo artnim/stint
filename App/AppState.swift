@@ -171,58 +171,12 @@ final class AppState {
     /// them. Issues missing from the merged result are closed only when everything succeeded, so
     /// one failing token or unreadable repo never hides another organisation's issues.
     func syncIssues() async {
-        let accounts = KeychainStore.githubAccounts()
-        guard !accounts.isEmpty else {
-            githubError = "No GitHub token. Add one in Settings → GitHub."
-            return
-        }
-        let cutoff = Self.closedSearchCutoff
-        var assigned: [GitHubIssue] = []
-        var rejected: [String] = []
-        var failed = 0
-        for account in accounts {
-            do {
-                let client = GitHubClient(token: account.token)
-                assigned += try await client.assignedIssues()
-                assigned += try await client.assignedIssues(state: "closed", since: cutoff)
-            } catch GitHubError.unauthorized {
-                rejected.append(account.label)
-                failed += 1
-            } catch {
-                failed += 1   // offline or rate-limited: keep the cache, stay quiet (spec §3)
-            }
-        }
-        let usable = accounts.filter { !rejected.contains($0.label) }
-        var listed: [GitHubIssue] = []
-        for repo in (try? db.allRepos()) ?? [] {
-            var fetched = false
-            for account in usable {
-                do {
-                    let client = GitHubClient(token: account.token)
-                    listed += try await client.repoIssues(owner: repo.owner, name: repo.name)
-                    listed += try await client.repoIssues(owner: repo.owner, name: repo.name,
-                                                          state: "closed", since: cutoff, maxPages: 2)
-                    fetched = true
-                    break
-                } catch GitHubError.http(let code) where code == 403 || code == 404 {
-                    continue   // this token cannot see the repo; try the next account
-                } catch {
-                    break      // unauthorized, offline, rate-limited: do not hammer the API
-                }
-            }
-            if !fetched { failed += 1 }
-        }
-        let merged = IssueSync.merge(assigned: assigned, repoIssues: listed)
-        if !merged.isEmpty || failed == 0 {
-            do {
-                try IssueSync.apply(merged, to: db, closeMissing: failed == 0)
-                refresh()
-            } catch {
-                lastError = "\(error)"
-            }
-        }
-        githubError = rejected.isEmpty ? nil
-            : "GitHub rejected the token for \(rejected.joined(separator: ", ")) (401). Check Settings → GitHub."
+        let accounts = KeychainStore.githubAccounts().map { GitHubAccountCredential(label: $0.label, token: $0.token) }
+        guard !accounts.isEmpty else { githubError = "No GitHub token. Add one in Settings → GitHub."; return }
+        let outcome = await AccountSync.run(accounts: accounts, db: db, closedSince: Self.closedSearchCutoff)
+        if outcome.applied { refresh() }
+        githubError = outcome.rejectedLabels.isEmpty ? nil
+            : "GitHub rejected the token for \(outcome.rejectedLabels.joined(separator: ", ")) (401). Check Settings → GitHub."
     }
 
     /// Tracks "owner/name" so its open issues are searchable before anything is assigned to you.

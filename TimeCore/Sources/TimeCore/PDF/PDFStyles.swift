@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import CoreGraphics
 import CoreText
@@ -99,3 +100,4 @@ struct TextBlock {
         ctx.restoreGState()
     }
 }
+#endif
