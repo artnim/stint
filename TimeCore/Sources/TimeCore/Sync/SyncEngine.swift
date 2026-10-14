@@ -69,7 +69,7 @@ public actor SyncEngine {
                 try db.execute(sql: "DELETE FROM outbox WHERE tableName = ? AND uuid = ?", arguments: [table, id.name])
                 deleted += 1
             }
-            _ = deviceId   // used by Task 4's resolveRunningStints call, added there
+            _ = try db.resolveRunningStints(deviceId: deviceId, now: now)   // R7, logged so the other device learns the outcome
             if let token = changes.token {
                 try Setting(key: Self.tokenKey, value: token, modifiedAt: now, modifiedBy: deviceId).save(db)
             }
