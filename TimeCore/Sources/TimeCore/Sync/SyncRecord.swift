@@ -38,6 +38,7 @@ public struct SyncChanges: Equatable, Sendable {
     }
 }
 
+/// `.notFound`: the server has deleted this record; do not re-create it.
 public enum SyncSaveOutcome: Equatable, Sendable { case saved, notFound, failed(String) }
 
 /// What the engine needs from a server. Saves are blind overwrites; LWW is decided by stamps.

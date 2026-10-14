@@ -36,6 +36,7 @@ public actor InMemorySyncServer: SyncTransport {
         try checkFailure()
         var out: [SyncRecordID: SyncSaveOutcome] = [:]
         for r in records {
+            if log.last(where: { $0.id == r.id })?.deleted == true { out[r.id] = .notFound; continue }   // do not resurrect
             seq += 1
             store[r.id] = r
             log.append((seq, r.id, false))

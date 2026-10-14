@@ -5,7 +5,10 @@ public struct SyncSummary: Equatable, Sendable {
     public var pulled = 0
     public var deleted = 0
     public var pushed = 0
-    public init(pulled: Int = 0, deleted: Int = 0, pushed: Int = 0) { self.pulled = pulled; self.deleted = deleted; self.pushed = pushed }
+    public var failed = 0
+    public init(pulled: Int = 0, deleted: Int = 0, pushed: Int = 0, failed: Int = 0) {
+        self.pulled = pulled; self.deleted = deleted; self.pushed = pushed; self.failed = failed
+    }
 }
 
 /// One cycle: pull remote changes since the stored token, apply them (R3, R4, R8, R9),
@@ -20,12 +23,23 @@ public actor SyncEngine {
         self.db = database; self.transport = transport; self.now = now
     }
 
+    private var inFlight: Task<SyncSummary, Error>?
+
+    /// Single-flight: a call made while a cycle is running awaits that cycle's result.
     public func sync() async throws -> SyncSummary {
+        if let running = inFlight { return try await running.value }
+        let task = Task { try await self.runCycle() }
+        inFlight = task
+        defer { inFlight = nil }
+        return try await task.value
+    }
+
+    private func runCycle() async throws -> SyncSummary {
         var summary = SyncSummary()
         let token = try db.setting(Self.tokenKey)
         let changes = try await transport.fetchChanges(since: token)
         (summary.pulled, summary.deleted) = try apply(changes)
-        summary.pushed = try await push()
+        (summary.pushed, summary.failed) = try await pushOutbox()
         return summary
     }
 
@@ -76,17 +90,22 @@ public actor SyncEngine {
                 p.clientId = try resolve(Client.self, uuid: r.string("clientUUID"), in: db)
             }
         case "Repo":
-            return try upsert(r, in: db, make: { Repo(owner: "", name: "", uuid: r.name) }) { x, db in
+            let owner = r.string("owner") ?? "", name = r.string("name") ?? ""
+            return try upsert(r, in: db, make: { Repo(owner: "", name: "", uuid: r.name) },
+                              natural: { try Repo.filter(Column("owner") == owner && Column("name") == name && Column("uuid") != r.name).fetchOne(db) }) { x, db in
                 RecordMapper.apply(r, to: &x)
                 x.projectId = try resolve(Project.self, uuid: r.string("projectUUID"), in: db)
             }
         case "Entry":
-            return try upsert(r, in: db, make: { Entry(description: "", startUTC: Date(), uuid: r.name) }) { e, db in
+            let key = r.string("importedKey")
+            return try upsert(r, in: db, make: { Entry(description: "", startUTC: Date(), uuid: r.name) },
+                              natural: { try key.flatMap { try Entry.filter(Column("importedKey") == $0 && Column("uuid") != r.name).fetchOne(db) } }) { e, db in
                 RecordMapper.apply(r, to: &e)
                 e.projectId = try resolve(Project.self, uuid: r.string("projectUUID"), in: db)
                 e.repoId = try resolve(Repo.self, uuid: r.string("repoUUID"), in: db)
             }
         case "Setting":
+            guard SyncTables.syncedSettings.contains(r.name) else { return false }
             let remoteAt = r.date("modifiedAt") ?? .distantPast
             let remoteBy = r.string("modifiedBy") ?? ""
             if let local = try Setting.fetchOne(db, key: r.name) {
@@ -104,6 +123,7 @@ public actor SyncEngine {
     }
 
     private static func upsert<T: SyncableRecord>(_ r: SyncRecord, in db: Database, make: () -> T,
+                                                  natural: () throws -> T? = { nil },
                                                   fill: (inout T, Database) throws -> Void) throws -> Bool {
         let remoteAt = r.date("modifiedAt") ?? .distantPast
         let remoteBy = r.string("modifiedBy") ?? ""
@@ -118,10 +138,39 @@ public actor SyncEngine {
             try local.update(db)
             return true
         }
+        if let other = try natural() {                                                   // R16
+            return try mergeNaturalKey(local: other, remote: r, remoteAt: remoteAt, remoteBy: remoteBy, in: db, fill: fill)
+        }
         var row = make()
         try fill(&row, db)
         try row.insert(db)
         return true
+    }
+
+    /// R16: two uuids for one natural key collapse into the lexically smaller one.
+    private static func mergeNaturalKey<T: SyncableRecord>(local other: T, remote r: SyncRecord, remoteAt: Date, remoteBy: String,
+                                                           in db: Database, fill: (inout T, Database) throws -> Void) throws -> Bool {
+        let table = T.databaseTableName
+        guard r.name < other.uuid else {
+            // ours survives: drop the remote duplicate on the server and make sure our version is pushed
+            try db.logChange(table: table, uuid: r.name, op: .delete, now: other.modifiedAt)
+            try requeueIfIdle(db, table: table, uuid: other.uuid, at: other.modifiedAt)
+            return false
+        }
+        var local = other
+        let old = local.uuid
+        let remoteWins = local.deletedAt == nil && !localWins(local.modifiedAt, local.modifiedBy, remoteAt, remoteBy)
+        local.uuid = r.name                                                              // keeps the local id
+        if remoteWins { try fill(&local, db) }
+        try local.update(db)
+        try db.execute(sql: "DELETE FROM outbox WHERE tableName = ? AND uuid = ?", arguments: [table, old])
+        try db.logChange(table: table, uuid: old, op: .delete, now: local.modifiedAt)    // the old server record goes away
+        if let deletedAt = local.deletedAt {
+            try db.logChange(table: table, uuid: r.name, op: .delete, now: deletedAt)    // our pending deletion carries over
+        } else if !remoteWins {
+            try requeueIfIdle(db, table: table, uuid: r.name, at: local.modifiedAt)
+        }
+        return remoteWins
     }
 
     private static func requeueIfIdle(_ db: Database, table: String, uuid: String, at: Date) throws {
@@ -171,9 +220,11 @@ public actor SyncEngine {
         try db.execute(sql: "DELETE FROM outbox WHERE tableName = ? AND uuid = ? AND id <= ?", arguments: [table, uuid, maxId])
     }
 
-    public func push() async throws -> Int {
+    public func push() async throws -> Int { try await pushOutbox().pushed }
+
+    func pushOutbox() async throws -> (pushed: Int, failed: Int) {
         let items = try db.pendingOutbox()
-        guard let maxId = items.last?.id else { return 0 }
+        guard let maxId = items.last?.id else { return (0, 0) }
         var latest: [String: OutboxItem] = [:]
         var order: [String] = []
         for i in items {
@@ -196,7 +247,7 @@ public actor SyncEngine {
                 }
             }
         }
-        var pushed = 0
+        var pushed = 0, failed = 0
         if !upserts.isEmpty {
             let outcomes = try await transport.save(upserts)
             try db.write { db in
@@ -205,15 +256,12 @@ public actor SyncEngine {
                     switch outcomes[r.id] ?? .failed("no outcome") {
                     case .saved:
                         try Self.clearOutbox(db, table: table, uuid: r.name, upTo: maxId); pushed += 1
-                    case .notFound:                                   // R4: deleted elsewhere meanwhile
-                        if table == "setting" {
-                            try db.execute(sql: "DELETE FROM setting WHERE key = ?", arguments: [r.name])
-                        } else {
-                            try db.execute(sql: "DELETE FROM \(table) WHERE uuid = ?", arguments: [r.name])
-                        }
+                    case .notFound:                                   // R4: deleted elsewhere; never re-create it
+                        if table == "setting" { break }               // settings are never deleted: stays queued, retried later
+                        try db.execute(sql: "DELETE FROM \(table) WHERE uuid = ?", arguments: [r.name])
                         try Self.clearOutbox(db, table: table, uuid: r.name, upTo: maxId)
                     case .failed:
-                        break                                         // stays queued, retried next cycle
+                        failed += 1                                   // stays queued, retried next cycle
                     }
                 }
             }
@@ -234,6 +282,6 @@ public actor SyncEngine {
                 for i in stale { try Self.clearOutbox(db, table: i.tableName, uuid: i.uuid, upTo: maxId) }
             }
         }
-        return pushed
+        return (pushed, failed)
     }
 }

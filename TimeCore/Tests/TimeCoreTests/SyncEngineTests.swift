@@ -171,4 +171,127 @@ final class SyncEngineTests: XCTestCase {
         let s = try await b.engine.sync()
         XCTAssertEqual(s.pulled, 0)
     }
+
+    // R16: two devices add the same repo offline; the smaller uuid survives everywhere.
+    func testSameRepoOnTwoDevicesCollapses() async throws {
+        let ra = try a.db.addRepo(fullName: "acme/web"), rb = try b.db.addRepo(fullName: "acme/web")
+        XCTAssertNotEqual(ra.uuid, rb.uuid)
+        for d in [a!, b!, a!, b!] { _ = try await d.engine.sync() }
+        let va = try a.db.allRepos(), vb = try b.db.allRepos()
+        XCTAssertEqual(va.count, 1); XCTAssertEqual(vb.count, 1)
+        XCTAssertEqual(va[0].uuid, min(ra.uuid, rb.uuid)); XCTAssertEqual(vb[0].uuid, va[0].uuid)
+        let repos = await server.records().keys.filter { $0.type == "Repo" }
+        XCTAssertEqual(repos.map(\.name), [va[0].uuid])
+        XCTAssertEqual(try a.db.pendingOutbox(), []); XCTAssertEqual(try b.db.pendingOutbox(), [])
+    }
+
+    // R16: same for entries with one import key.
+    func testSameImportedKeyCollapses() async throws {
+        var ea = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), importedKey: "k")
+        var eb = Entry(description: "x", startUTC: t0, endUTC: t0.addingTimeInterval(60), importedKey: "k")
+        try a.db.insert(&ea); try b.db.insert(&eb)
+        for d in [a!, b!, a!, b!] { _ = try await d.engine.sync() }
+        let range = (t0.addingTimeInterval(-10), t0.addingTimeInterval(86400))
+        let va = try a.db.finishedEntries(from: range.0, to: range.1), vb = try b.db.finishedEntries(from: range.0, to: range.1)
+        XCTAssertEqual(va.count, 1); XCTAssertEqual(vb.count, 1)
+        XCTAssertEqual(va[0].uuid, min(ea.uuid, eb.uuid)); XCTAssertEqual(vb[0].uuid, va[0].uuid)
+        let entries = await server.records().keys.filter { $0.type == "Entry" }
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(try a.db.pendingOutbox(), []); XCTAssertEqual(try b.db.pendingOutbox(), [])
+    }
+
+    // The server refuses to resurrect a deleted record.
+    func testServerReportsNotFoundForDeletedRecord() async throws {
+        let rec = SyncRecord(type: "Client", name: "u1", fields: [:])
+        _ = try await server.save([rec])
+        try await server.delete([rec.id])
+        let out = try await server.save([rec])
+        XCTAssertEqual(out[rec.id], .notFound)
+        let names = await server.records().keys
+        XCTAssertTrue(names.isEmpty)
+    }
+
+    // R4 race: B's edit is pushed after A's deletion reached the server; notFound deletes B's row.
+    func testPushOfDeletedEntryDeletesLocalRow() async throws {
+        let (_, _, _, e) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var eb = try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400))[0]
+        try edit(b.db, &eb, at: Date().addingTimeInterval(3600)) { $0.description = "late edit" }
+        let ad = a!
+        let racing = HookTransport(server) { _ in
+            try ad.db.delete(e)
+            _ = try await ad.engine.sync()                  // the deletion lands between B's fetch and B's save
+        }
+        _ = try await SyncEngine(database: b.db, transport: racing).sync()
+        _ = try await b.engine.sync()
+        XCTAssertEqual(try b.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)), [])
+        XCTAssertEqual(try a.db.finishedEntries(from: t0, to: t0.addingTimeInterval(86400)), [])
+        XCTAssertEqual(try b.db.pendingOutbox(), [])
+        let names = await server.records().keys.map(\.name)
+        XCTAssertFalse(names.contains(e.uuid))
+    }
+
+    // notFound for a setting must not delete it; it stays queued.
+    func testNotFoundForSettingKeepsLocalValue() async throws {
+        try a.db.setSetting("userName", "Martin")
+        let engine = SyncEngine(database: a.db, transport: HookTransport(server, outcomeOverride: .notFound))
+        _ = try await engine.sync()
+        XCTAssertEqual(try a.db.setting("userName"), "Martin")
+        XCTAssertEqual(try a.db.pendingOutbox().count, 1)
+    }
+
+    // A local winner whose version was overwritten on the server is pushed again.
+    func testLocalWinnerIsPushedAgain() async throws {
+        var (_, p, _, _) = try seedA()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        var pb = try b.db.allProjects()[0]
+        let base = Date().addingTimeInterval(3600)
+        try edit(b.db, &pb, at: base.addingTimeInterval(20)) { $0.name = "B newer" }
+        try edit(a.db, &p, at: base.addingTimeInterval(10)) { $0.name = "A older" }
+        let bd = b!
+        let interleaved = HookTransport(server) { _ in _ = try await bd.engine.sync() }   // B pushes during A's cycle
+        _ = try await SyncEngine(database: a.db, transport: interleaved).sync()           // A's blind save overwrites B's
+        _ = try await b.engine.sync()                                                     // B pulls the older one, wins, re-queues
+        _ = try await a.engine.sync()
+        XCTAssertEqual(try a.db.allProjects()[0].name, "B newer")
+        XCTAssertEqual(try b.db.allProjects()[0].name, "B newer")
+    }
+
+    // Outbox items added while a push is in flight survive the post-push cleanup.
+    func testOutboxItemsAddedDuringPushSurvive() async throws {
+        _ = try seedA()
+        _ = try await a.engine.sync()
+        var p = try a.db.allProjects()[0]
+        try edit(a.db, &p, at: Date().addingTimeInterval(3600)) { $0.name = "first" }
+        let ad = a!
+        let editing = HookTransport(server) { _ in
+            var q = try ad.db.allProjects()[0]
+            try edit(ad.db, &q, at: Date().addingTimeInterval(7200)) { $0.name = "second" }
+        }
+        _ = try await SyncEngine(database: a.db, transport: editing).sync()
+        XCTAssertEqual(try a.db.pendingOutbox().count, 1)
+        _ = try await a.engine.sync()
+        XCTAssertEqual(try a.db.pendingOutbox(), [])
+        let rec = await server.records().values.first { $0.type == "Project" }
+        XCTAssertEqual(rec?.string("name"), "second")
+    }
+
+    // Remote settings outside the synced set are ignored.
+    func testUnsyncedRemoteSettingIsIgnored() throws {
+        let rec = RecordMapper.record(settingKey: "databasePath", value: "/x", modifiedAt: t0, modifiedBy: "z")
+        _ = try b.db.write { try SyncEngine.applyRecord(rec, in: $0) }
+        XCTAssertNil(try b.db.setting("databasePath"))
+    }
+
+    // A second sync() during a running cycle shares its result.
+    func testSyncIsSingleFlight() async throws {
+        _ = try seedA()
+        let spy = SpyTransport(server)
+        let engine = SyncEngine(database: a.db, transport: spy)
+        async let s1 = engine.sync(), s2 = engine.sync()
+        let (r1, r2) = try await (s1, s2)
+        XCTAssertEqual(r1, r2)
+        let calls = await spy.calls
+        XCTAssertEqual(calls, ["fetch", "save"])
+    }
 }

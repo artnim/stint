@@ -30,3 +30,22 @@ actor SpyTransport: SyncTransport {
     func save(_ records: [SyncRecord]) async throws -> [SyncRecordID: SyncSaveOutcome] { calls.append("save"); return try await inner.save(records) }
     func delete(_ ids: [SyncRecordID]) async throws { calls.append("delete"); try await inner.delete(ids) }
 }
+
+/// Delegates to the server but lets a test interleave work before a save, or replace its outcomes.
+actor HookTransport: SyncTransport {
+    let inner: InMemorySyncServer
+    let beforeSave: (@Sendable ([SyncRecord]) async throws -> Void)?
+    let outcomeOverride: SyncSaveOutcome?
+    init(_ inner: InMemorySyncServer, outcomeOverride: SyncSaveOutcome? = nil,
+         beforeSave: (@Sendable ([SyncRecord]) async throws -> Void)? = nil) {
+        self.inner = inner; self.outcomeOverride = outcomeOverride; self.beforeSave = beforeSave
+    }
+    func fetchChanges(since token: String?) async throws -> SyncChanges { try await inner.fetchChanges(since: token) }
+    func save(_ records: [SyncRecord]) async throws -> [SyncRecordID: SyncSaveOutcome] {
+        try await beforeSave?(records)
+        let real = try await inner.save(records)
+        guard let o = outcomeOverride else { return real }
+        return Dictionary(uniqueKeysWithValues: real.keys.map { ($0, o) })
+    }
+    func delete(_ ids: [SyncRecordID]) async throws { try await inner.delete(ids) }
+}
