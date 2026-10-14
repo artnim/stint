@@ -1,0 +1,43 @@
+import XCTest
+import GRDB
+@testable import TimeCore
+
+final class WindowTests: XCTestCase {
+    func testWindowStartIsFirstDayOfMonthTwoBack() {
+        XCTAssertEqual(windowStart(now: local("2026-10-14 12:00"), calendar: berlin), local("2026-08-01 00:00"))
+        XCTAssertEqual(windowStart(now: local("2026-01-05 12:00"), calendar: berlin), local("2025-11-01 00:00"))
+    }
+
+    // Review Focus 4: pruning touches neither the outbox nor rows with pending changes.
+    func testPruneDeletesOldFinishedEntriesWithoutLogging() throws {
+        let db = try AppDatabase.inMemory()
+        let cutoff = local("2026-08-01 00:00")
+        try db.start(description: "old", projectId: nil, at: local("2026-07-10 09:00"))
+        try db.stopRunning(at: local("2026-07-10 10:00"))
+        try db.start(description: "new", projectId: nil, at: local("2026-08-10 09:00"))
+        try db.stopRunning(at: local("2026-08-10 10:00"))
+        // pretend everything was pushed, then edit one old entry so it is pending again
+        try db.write { try $0.execute(sql: "DELETE FROM outbox") }
+        try db.start(description: "old but edited", projectId: nil, at: local("2026-07-20 09:00"))
+        try db.stopRunning(at: local("2026-07-20 10:00"))
+        // inserted raw after the edit: start() would stop it and log that stop, and it must stay running
+        try db.write { db in var e = Entry(description: "running since june", startUTC: local("2026-06-01 09:00")); try e.insert(db) }
+
+        let pruned = try db.pruneEntries(startingBefore: cutoff)
+        XCTAssertEqual(pruned, 1)
+        let left = try db.entries(from: local("2026-01-01 00:00"), to: local("2026-12-31 00:00")).map(\.description)
+        XCTAssertEqual(left.sorted(), ["new", "old but edited", "running since june"])
+        XCTAssertEqual(try db.pendingOutbox().map(\.op), ["upsert", "upsert"], "unchanged: only the two pending upserts for the edited entry")
+    }
+
+    func testMonthTotalIncludesRunningStint() throws {
+        let db = try AppDatabase.inMemory()
+        let now = local("2026-10-14 12:00")
+        try db.start(description: "last month", projectId: nil, at: local("2026-09-30 09:00"))
+        try db.stopRunning(at: local("2026-09-30 10:00"))
+        try db.start(description: "this month", projectId: nil, at: local("2026-10-02 09:00"))
+        try db.stopRunning(at: local("2026-10-02 10:30"))
+        try db.start(description: "running", projectId: nil, at: now.addingTimeInterval(-1800))
+        XCTAssertEqual(try db.monthTotalHours(now: now, calendar: berlin), 2.0, accuracy: 1e-9)
+    }
+}
