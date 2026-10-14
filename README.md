@@ -118,6 +118,14 @@ used by `notarytool`).
 
     git tag v0.1.0 && git push origin v0.1.0
 
+## Credits
+
+Stint was designed and built by Martin Hans together with Claude, Anthropic's coding
+assistant: the design discussion, the implementation plan, the code and its reviews were
+done in Claude Code sessions, and every commit carries a `Claude-Session` link to the
+session it came from. The report layout and rounding rules follow a Python tool Martin
+used before; the numbers were verified against it.
+
 ## License
 
 MIT, see `LICENSE`.
