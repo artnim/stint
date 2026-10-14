@@ -2,7 +2,7 @@ import SwiftUI
 import TimeCore
 
 @main
-struct TimetrackerApp: App {
+struct StintApp: App {
     @State private var state = AppState.load()
 
     var body: some Scene {

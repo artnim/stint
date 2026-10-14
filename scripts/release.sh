@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build a signed, notarized, stapled Timetracker.app and zip it for distribution.
+# Build a signed, notarized, stapled Stint.app and zip it for distribution.
 #
-#   scripts/release.sh            # build + sign + notarize + staple -> dist/Timetracker-<version>.zip
+#   scripts/release.sh            # build + sign + notarize + staple -> dist/Stint-<version>.zip
 #   scripts/release.sh --no-notarize   # build + sign only (no Apple credentials needed)
 #
 # One-time setup for notarization (stores an app-specific password in the login keychain,
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-NOTARY_PROFILE="${NOTARY_PROFILE:-timetracker-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-stint-notary}"
 NOTARIZE=1
 [ "${1:-}" = "--no-notarize" ] && NOTARIZE=0
 
@@ -21,16 +21,16 @@ BUILD_NUMBER=$(git rev-list --count HEAD)
 # a clean, dedicated derived-data dir: an incremental build can re-copy resource bundles
 # after the app was sealed, which breaks the signature
 DERIVED=build-release
-APP=$DERIVED/Build/Products/Release/Timetracker.app
+APP=$DERIVED/Build/Products/Release/Stint.app
 DIST=dist
-ZIP="$DIST/Timetracker-$VERSION.zip"
+ZIP="$DIST/Stint-$VERSION.zip"
 
 echo "==> generating project"
 xcodegen generate --quiet
 
 echo "==> building Release $VERSION ($BUILD_NUMBER) from scratch"
 rm -rf "$DERIVED"
-xcodebuild -scheme Timetracker -configuration Release -derivedDataPath "$DERIVED" \
+xcodebuild -scheme Stint -configuration Release -derivedDataPath "$DERIVED" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build 2>&1 | grep -E "error:|warning: .*App/|BUILD" || true
 [ -d "$APP" ] || { echo "build failed: $APP missing" >&2; exit 1; }
 

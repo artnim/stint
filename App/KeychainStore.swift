@@ -10,20 +10,32 @@ struct GitHubAccount: Codable, Identifiable, Equatable {
 }
 
 enum KeychainStore {
-    static let service = "io.artnim.timetracker"
+    static let service = "io.artnim.stint"
+    static let legacyService = "io.artnim.timetracker"   // the app's name before 0.1.0
     static let tokenAccount = "github-token"          // legacy single token (migrated on first read)
     static let accountsAccount = "github-accounts"    // JSON array of GitHubAccount
 
     struct KeychainError: Error { let status: OSStatus }
 
-    private static func query(_ account: String) -> [String: Any] {
+    private static func query(_ account: String, service: String = service) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }
 
     static func read(_ account: String) -> String? {
-        var q = query(account)
+        if let value = read(account, service: service) { return value }
+        // first launch after the rename: adopt the item stored under the old name
+        if let legacy = read(account, service: legacyService) {
+            try? write(account, legacy)
+            SecItemDelete(query(account, service: legacyService) as CFDictionary)
+            return legacy
+        }
+        return nil
+    }
+
+    private static func read(_ account: String, service: String) -> String? {
+        var q = query(account, service: service)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?

@@ -27,13 +27,35 @@ final class AppState {
 
     static let defaultDatabaseURL: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appending(path: "Timetracker/timetracker.sqlite")
+        .appending(path: "Stint/stint.sqlite")
 
     static var databaseURL: URL {
+        migrateFromTimetracker()
         if let p = UserDefaults.standard.string(forKey: "databasePath"), !p.isEmpty {
             return URL(fileURLWithPath: p)
         }
         return defaultDatabaseURL
+    }
+
+    /// The app was called Timetracker before 0.1.0: carry over its preferences and move its
+    /// data folder to the new name, once, when the new folder does not exist yet.
+    private static func migrateFromTimetracker() {
+        let fm = FileManager.default
+        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let oldFolder = support.appending(path: "Timetracker")
+        let newFolder = defaultDatabaseURL.deletingLastPathComponent()
+        if UserDefaults.standard.object(forKey: "databasePath") == nil,
+           let old = UserDefaults(suiteName: "io.artnim.timetracker")?.string(forKey: "databasePath"), !old.isEmpty {
+            UserDefaults.standard.set(old, forKey: "databasePath")
+        }
+        guard fm.fileExists(atPath: oldFolder.appending(path: "timetracker.sqlite").path),
+              !fm.fileExists(atPath: newFolder.path) else { return }
+        do {
+            try fm.moveItem(at: oldFolder, to: newFolder)
+            try fm.moveItem(at: newFolder.appending(path: "timetracker.sqlite"), to: defaultDatabaseURL)
+        } catch {
+            NSLog("Stint: could not move the Timetracker data folder: \(error)")
+        }
     }
 
     init(db: AppDatabase) {
@@ -53,7 +75,7 @@ final class AppState {
             return AppState(db: try AppDatabase.open(at: databaseURL))
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Timetracker cannot open its database"
+            alert.messageText = "Stint cannot open its database"
             alert.informativeText = "\(databaseURL.path)\n\n\(error)"
             alert.runModal()
             NSApplication.shared.terminate(nil)

@@ -45,7 +45,7 @@ struct GeneralSettingsTab: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let dir = panel.url else { return }
-        reopen(dir.appending(path: "timetracker.sqlite"))
+        reopen(dir.appending(path: "stint.sqlite"))
     }
 
     /// Opens (or creates) the database at `url`; the previous file is left where it is.

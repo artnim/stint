@@ -1,4 +1,4 @@
-# Timetracker
+# Stint
 
 A native macOS menu bar time tracker for people who bill by the hour and work out of
 GitHub issues. Your data lives in one SQLite file on your Mac, the app talks to GitHub
@@ -37,19 +37,19 @@ Requires macOS 14 or newer.
 
 ## Install
 
-Download `Timetracker-<version>.zip` from the latest release, unzip, and move
-`Timetracker.app` to Applications. The app is signed and notarized; macOS opens it
+Download `Stint-<version>.zip` from the latest release, unzip, and move
+`Stint.app` to Applications. The app is signed and notarized; macOS opens it
 without a warning. It has no Dock icon; look for the clock in the menu bar.
 
 To build it yourself:
 
     brew install xcodegen
     xcodegen generate
-    xcodebuild -scheme Timetracker -configuration Debug -derivedDataPath build build
-    open build/Build/Products/Debug/Timetracker.app
+    xcodebuild -scheme Stint -configuration Debug -derivedDataPath build build
+    open build/Build/Products/Debug/Stint.app
 
 Debug builds are ad-hoc signed and need no certificate. `xcodegen generate` also writes
-`Timetracker.xcodeproj` if you prefer Xcode.
+`Stint.xcodeproj` if you prefer Xcode.
 
 ## First run
 
@@ -74,7 +74,7 @@ Debug builds are ad-hoc signed and need no certificate. `xcodegen generate` also
 
 ## Where the data is
 
-`~/Library/Application Support/Timetracker/timetracker.sqlite`, a plain SQLite file you
+`~/Library/Application Support/Stint/stint.sqlite`, a plain SQLite file you
 can open with any SQLite client and back up by copying. Settings → General can move it;
 the app copies the current database to the new place. If you put it on a synced folder
 (iCloud Drive, Dropbox), run the app on one machine only: SQLite files do not merge.
@@ -95,13 +95,13 @@ against the Python tool it replaces. Design notes are in `docs/superpowers/`.
 
 `scripts/release.sh` builds a Release configuration signed with the Developer ID
 Application certificate (hardened runtime, secure timestamp), notarizes it with
-`notarytool`, staples the ticket and writes `dist/Timetracker-<version>.zip`. It always
+`notarytool`, staples the ticket and writes `dist/Stint-<version>.zip`. It always
 builds from scratch in `build-release/`.
 
 One-time setup for local notarization (an app-specific password stored in the login
 keychain):
 
-    xcrun notarytool store-credentials timetracker-notary --apple-id <apple-id> --team-id <team-id>
+    xcrun notarytool store-credentials stint-notary --apple-id <apple-id> --team-id <team-id>
 
 `scripts/release.sh --no-notarize` builds and signs without Apple credentials. The version
 comes from `MARKETING_VERSION` in `project.yml`; the build number is the commit count.

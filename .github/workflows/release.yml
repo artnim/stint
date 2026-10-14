@@ -1,7 +1,7 @@
 name: Release
 
 # Tag a commit `vX.Y.Z` (matching MARKETING_VERSION in project.yml) to build, sign,
-# notarize and publish Timetracker-X.Y.Z.zip as a GitHub release.
+# notarize and publish Stint-X.Y.Z.zip as a GitHub release.
 #
 # Repository secrets:
 #   MACOS_CERT_P12_BASE64        Developer ID Application identity (.p12), base64
@@ -73,5 +73,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/Timetracker-*.zip \
-            --title "Timetracker ${GITHUB_REF_NAME#v}" --generate-notes
+          gh release create "${GITHUB_REF_NAME}" dist/Stint-*.zip \
+            --title "Stint ${GITHUB_REF_NAME#v}" --generate-notes

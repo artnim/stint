@@ -1,4 +1,4 @@
-name: Timetracker
+name: Stint
 options:
   bundleIdPrefix: io.artnim
   deploymentTarget:
@@ -8,7 +8,7 @@ packages:
   TimeCore:
     path: TimeCore
 targets:
-  Timetracker:
+  Stint:
     type: application
     platform: macOS
     sources: [App]
@@ -18,11 +18,11 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Timetracker
+        CFBundleDisplayName: Stint
         LSUIElement: true
         NSHumanReadableCopyright: ""
     entitlements:
-      path: App/Timetracker.entitlements
+      path: App/Stint.entitlements
       properties:
         com.apple.security.app-sandbox: false
     settings:
@@ -30,7 +30,7 @@ targets:
         SWIFT_VERSION: "5.0"
         SWIFT_STRICT_CONCURRENCY: minimal
         CODE_SIGN_STYLE: Manual
-        PRODUCT_BUNDLE_IDENTIFIER: io.artnim.timetracker
+        PRODUCT_BUNDLE_IDENTIFIER: io.artnim.stint
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
