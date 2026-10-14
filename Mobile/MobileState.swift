@@ -1,4 +1,3 @@
-import CloudKit
 import Foundation
 import Observation
 import TimeCore
@@ -83,19 +82,30 @@ final class MobileState {
     func start(_ item: RecentItem) {
         perform { try db.start(description: item.description, projectId: item.projectId, repoId: item.repoId,
                                issueNumber: item.issueNumber, issueTitle: item.issueTitle) }
+        Task { await syncNow(reason: "start") }
     }
     func startIssue(_ row: IssueRow) {
         perform { try db.start(description: "#\(row.issue.number): \(row.issue.title)", projectId: row.repo.projectId,
                                repoId: row.repo.id, issueNumber: row.issue.number, issueTitle: row.issue.title) }
+        Task { await syncNow(reason: "start") }
     }
-    func startNew(description: String, projectId: Int64?) { perform { try db.start(description: description, projectId: projectId) } }
-    func stop() { perform { try db.stopRunning() } }
+    func startNew(description: String, projectId: Int64?) {
+        perform { try db.start(description: description, projectId: projectId) }
+        Task { await syncNow(reason: "start") }
+    }
+    func stop() {
+        perform { try db.stopRunning() }
+        Task { await syncNow(reason: "stop") }     // a stop must leave the phone before it is locked
+    }
     func update(_ entry: Entry) -> Bool {
         if let end = entry.endUTC, end <= entry.startUTC { lastError = "End must be after start."; return false }
         perform { try db.update(entry) }
         return lastError == nil
     }
-    func delete(_ entry: Entry) { perform { try db.delete(entry) } }
+    func delete(_ entry: Entry) {
+        perform { try db.delete(entry) }
+        Task { await syncNow(reason: "delete") }
+    }
     func assignRepo(_ repoId: Int64, to projectId: Int64?) { perform { try db.assignRepo(repoId, toProject: projectId) } }
     func createProject(named name: String) -> Int64? { var p = Project(clientId: nil, name: name); perform { try db.insert(&p) }; return p.id }
     func windowEntries() -> [Entry] {

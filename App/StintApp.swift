@@ -1,5 +1,4 @@
 import SwiftUI
-import CloudKit
 import TimeCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
-        if CKNotification(fromRemoteNotificationDictionary: userInfo) != nil {
+        if CloudKitTransport.isSyncNotification(userInfo) {
             Task { @MainActor in await AppState.shared?.syncNow(reason: "push") }
         }
     }

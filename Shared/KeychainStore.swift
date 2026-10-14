@@ -14,6 +14,9 @@ enum KeychainStore {
     static let legacyService = "io.artnim.timetracker"   // the app's name before 0.1.0
     static let tokenAccount = "github-token"          // legacy single token (migrated on first read)
     static let accountsAccount = "github-accounts"    // JSON array of GitHubAccount
+    /// Shared by the Mac and iPhone apps (`keychain-access-groups` in both entitlements), so the synced item is
+    /// visible to both; without it each app would use its own application identifier as the group.
+    static let accessGroup = "76C3CLR3D5.io.artnim.stint"
 
     struct KeychainError: Error { let status: OSStatus }
 
@@ -23,6 +26,7 @@ enum KeychainStore {
                                 kSecAttrAccount as String: account]
         if synchronizable {
             q[kSecAttrSynchronizable as String] = true
+            q[kSecAttrAccessGroup as String] = accessGroup
             #if os(macOS)
             q[kSecUseDataProtectionKeychain as String] = true   // synchronizable items live in the data-protection keychain
             #endif

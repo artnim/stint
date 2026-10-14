@@ -4,6 +4,8 @@
 <dict>
 	<key>aps-environment</key>
 	<string>development</string>
+	<key>com.apple.developer.icloud-container-environment</key>
+	<string>Production</string>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.io.artnim.stint</string>
@@ -11,6 +13,10 @@
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudKit</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>76C3CLR3D5.io.artnim.stint</string>
 	</array>
 </dict>
 </plist>

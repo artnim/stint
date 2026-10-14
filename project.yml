@@ -68,6 +68,8 @@ targets:
       path: Mobile/Info.plist
       properties:
         CFBundleDisplayName: Stint
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIBackgroundModes: [remote-notification]
@@ -76,6 +78,9 @@ targets:
       properties:
         com.apple.developer.icloud-container-identifiers: [iCloud.io.artnim.stint]
         com.apple.developer.icloud-services: [CloudKit]
+        # same container environment as the notarized Mac, even for a phone installed from Xcode
+        com.apple.developer.icloud-container-environment: Production
+        keychain-access-groups: [76C3CLR3D5.io.artnim.stint]
         aps-environment: development
     settings:
       base:
