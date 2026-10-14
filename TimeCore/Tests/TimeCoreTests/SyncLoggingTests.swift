@@ -86,4 +86,44 @@ final class SyncLoggingTests: XCTestCase {
         try db.insert(&i)
         XCTAssertEqual(try db.pendingOutbox().map(\.tableName), ["repo"])   // issueCache is not synced
     }
+
+    func testDeletingAClientDetachesAndLogsItsProjects() throws {
+        var c = Client(name: "C"); try db.insert(&c)
+        var p1 = Project(clientId: c.id, name: "P1"); try db.insert(&p1)
+        var p2 = Project(clientId: c.id, name: "P2"); try db.insert(&p2)
+        let before = try db.pendingOutbox().count
+        try db.delete(c)
+        XCTAssertEqual(try db.allProjects().map(\.clientId), [nil, nil])
+        let ops = try db.pendingOutbox().dropFirst(before).map { "\($0.tableName):\($0.op)" }
+        XCTAssertEqual(Array(ops), ["project:upsert", "project:upsert", "client:delete"])
+    }
+
+    func testDeletingAProjectDetachesEntriesAndRepos() throws {
+        var p = Project(clientId: nil, name: "P"); try db.insert(&p)
+        let repo = try db.addRepo(fullName: "o/r")
+        try db.assignRepo(repo.id!, toProject: p.id)
+        try db.start(description: "x", projectId: p.id, at: t0)
+        try db.stopRunning(at: t0.addingTimeInterval(600))
+        let before = try db.pendingOutbox().count
+        try db.delete(p)
+        XCTAssertNil(try db.allRepos()[0].projectId)
+        XCTAssertNil(try db.entries(from: t0, to: t0.addingTimeInterval(86400))[0].projectId)
+        let ops = try db.pendingOutbox().dropFirst(before).map { "\($0.tableName):\($0.op)" }
+        XCTAssertEqual(Array(ops), ["entry:upsert", "repo:upsert", "project:delete"])
+    }
+
+    func testDeletingARepoDetachesEntriesAndDropsItsIssueCache() throws {
+        let repo = try db.addRepo(fullName: "o/r")
+        try db.start(description: "x", projectId: nil, repoId: repo.id, issueNumber: 1, at: t0)
+        try db.stopRunning(at: t0.addingTimeInterval(600))
+        var i = IssueCache(repoId: repo.id!, number: 1, title: "t", isPullRequest: false, state: "open", updatedAt: t0)
+        try db.insert(&i)
+        let before = try db.pendingOutbox().count
+        try db.delete(repo)
+        XCTAssertNil(try db.entries(from: t0, to: t0.addingTimeInterval(86400))[0].repoId)
+        XCTAssertEqual(try db.openIssueRows(assignedOnly: false), [])
+        XCTAssertEqual(try db.read { try IssueCache.fetchCount($0) }, 0)
+        let ops = try db.pendingOutbox().dropFirst(before).map { "\($0.tableName):\($0.op)" }
+        XCTAssertEqual(Array(ops), ["entry:upsert", "repo:delete"])
+    }
 }

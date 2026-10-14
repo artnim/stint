@@ -78,7 +78,33 @@ extension AppDatabase {
     }
     public func delete<T: SyncableRecord>(_ record: T) throws {
         var r = record
-        try write { try $0.syncTombstone(&r, deviceId: deviceId, now: Date()) }
+        try write { db in
+            let now = Date()
+            try detachChildren(of: r, in: db, now: now)
+            try db.syncTombstone(&r, deviceId: deviceId, now: now)
+        }
+    }
+
+    /// R4: dependants of a deleted parent stay in place with a null reference (stamped and logged).
+    private func detachChildren<T: SyncableRecord>(of record: T, in db: Database, now: Date) throws {
+        guard let id = record.id else { return }
+        func detach<C: SyncableRecord>(_ type: C.Type, column: String, set: (inout C) -> Void) throws {
+            for var child in try C.filter(Column(column) == id && Column("deletedAt") == nil).fetchAll(db) {
+                set(&child)
+                try db.syncUpdate(&child, deviceId: deviceId, now: now)
+            }
+        }
+        switch T.databaseTableName {
+        case "client":
+            try detach(Project.self, column: "clientId") { $0.clientId = nil }
+        case "project":
+            try detach(Entry.self, column: "projectId") { $0.projectId = nil }
+            try detach(Repo.self, column: "projectId") { $0.projectId = nil }
+        case "repo":
+            try detach(Entry.self, column: "repoId") { $0.repoId = nil }
+            try db.execute(sql: "DELETE FROM issueCache WHERE repoId = ?", arguments: [id])
+        default: break
+        }
     }
 
     public func purge(table: String, uuid: String) throws {
