@@ -1,5 +1,6 @@
 import SwiftUI
 import TimeCore
+import UserNotifications
 import WatchKit
 
 final class WatchDelegate: NSObject, WKApplicationDelegate {
@@ -10,9 +11,14 @@ final class WatchDelegate: NSObject, WKApplicationDelegate {
 
     /// R19: CloudKit's zone pushes trigger a sync. Repeated on every foreground: cheap, and it recovers
     /// when the first request at launch got no answer (no network yet).
+    /// watchOS hands out a push token only once the app holds some notification authorization; provisional
+    /// authorization asks nothing and shows nothing (Stint never posts a notification).
     static func registerForPushes() {
         PushDiagnostics.requested()
-        WKApplication.shared().registerForRemoteNotifications()
+        UNUserNotificationCenter.current().requestAuthorization(options: [.provisional]) { _, error in
+            if let error { PushDiagnostics.failed(error) }
+            DispatchQueue.main.async { WKApplication.shared().registerForRemoteNotifications() }
+        }
     }
 
     func didRegisterForRemoteNotifications(withDeviceToken deviceToken: Data) { PushDiagnostics.registered() }
