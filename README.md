@@ -102,8 +102,8 @@ changed on the server in the meantime is retried after the next pull.
 - **Status.** Settings shows the sync status line and a "Sync now" button.
 
 The iPhone app is installed from Xcode (scheme `StintMobile`) or from TestFlight.
-Release Mac builds and the iPhone app use the production CloudKit environment. A Debug
-Mac build uses the development environment and therefore does not see the phone's data.
+Every build, Debug and Release on the Mac as well as the iPhone app, uses the production
+CloudKit environment, so there is exactly one copy of your data in iCloud.
 
 ## Development
 
