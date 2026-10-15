@@ -115,6 +115,7 @@ targets:
         WKApplication: true
         WKCompanionAppBundleIdentifier: io.artnim.stint.ios
         WKRunsIndependentlyOfCompanionApp: true
+        WKBackgroundModes: [remote-notification]   # silent CloudKit pushes (R19)
     entitlements:
       path: Watch/StintWatch.entitlements
       properties:

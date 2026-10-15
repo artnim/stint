@@ -5,7 +5,14 @@ import WatchKit
 final class WatchDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
         Self.scheduleRefresh()
-        WKApplication.shared().registerForRemoteNotifications()   // R19: CloudKit's zone pushes trigger a sync
+        Self.registerForPushes()
+    }
+
+    /// R19: CloudKit's zone pushes trigger a sync. Repeated on every foreground: cheap, and it recovers
+    /// when the first request at launch got no answer (no network yet).
+    static func registerForPushes() {
+        PushDiagnostics.requested()
+        WKApplication.shared().registerForRemoteNotifications()
     }
 
     func didRegisterForRemoteNotifications(withDeviceToken deviceToken: Data) { PushDiagnostics.registered() }
@@ -57,7 +64,10 @@ struct WatchApp: App {
             .environment(state)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await state.syncNow(reason: "foreground") } }
+            if phase == .active {
+                WatchDelegate.registerForPushes()
+                Task { await state.syncNow(reason: "foreground") }
+            }
             if phase == .background { WatchDelegate.scheduleRefresh() }
         }
     }

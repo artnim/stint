@@ -7,6 +7,12 @@ public enum PushDiagnostics {
     private static let errorKey = "push.error"
     private static let lastKey = "push.last"
 
+    private static let requestedKey = "push.requested"
+
+    public static func requested(at date: Date = Date()) {
+        UserDefaults.standard.set(date, forKey: requestedKey)
+    }
+
     public static func registered() {
         UserDefaults.standard.set(true, forKey: registeredKey)
         UserDefaults.standard.removeObject(forKey: errorKey)
@@ -27,7 +33,9 @@ public enum PushDiagnostics {
         let state: String
         if let error = d.string(forKey: errorKey) { state = "failed – \(error)" }
         else if d.bool(forKey: registeredKey) { state = "registered" }
-        else { state = "not registered" }
+        else if let asked = d.object(forKey: requestedKey) as? Date {
+            state = "no answer to request at " + asked.formatted(date: .omitted, time: .shortened)
+        } else { state = "never requested" }
         let last = (d.object(forKey: lastKey) as? Date).map { "last " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "none received"
         return "Push: \(state) · \(last)"
     }
