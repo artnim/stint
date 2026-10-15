@@ -1,7 +1,7 @@
 # Sync and iPhone companion — design
 
 Date: 2026-10-14
-Status: implemented; two-device verification pending (2026-10-14)
+Status: implemented; verified Mac ↔ iPhone against the production container (2026-10-15)
 
 ## Goal
 

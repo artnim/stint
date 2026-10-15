@@ -93,7 +93,7 @@ struct PopoverView: View {
                         HStack {
                             Image(systemName: row.issue.isPullRequest ? "arrow.triangle.pull" : "circle.dotted")
                                 .foregroundStyle(.secondary)
-                            Text("#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
+                            Text(verbatim: "#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
                             Text(row.issue.title).lineLimit(1)
                             if row.issue.state == "closed" {
                                 Text("closed").font(.caption2).foregroundStyle(.tertiary)

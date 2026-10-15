@@ -43,7 +43,7 @@ struct StintView: View {
                         ForEach(group.rows) { row in
                             Button { state.startIssue(row) } label: {
                                 HStack {
-                                    Text("#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
+                                    Text(verbatim: "#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
                                     Text(row.issue.title).lineLimit(2)
                                     if row.issue.state == "closed" { Text("closed").font(.caption2).foregroundStyle(.tertiary) }
                                     if !row.issue.assignedToMe { Text("unassigned").font(.caption2).foregroundStyle(.tertiary) }
