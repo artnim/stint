@@ -10,7 +10,14 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                      fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         guard CloudKitTransport.isSyncNotification(userInfo) else { completionHandler(.noData); return }
+        PushDiagnostics.received()
         Task { @MainActor in await MobileState.shared?.syncNow(reason: "push"); completionHandler(.newData) }
+    }
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        PushDiagnostics.registered()
+    }
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        PushDiagnostics.failed(error)
     }
 }
 

@@ -9,6 +9,7 @@ struct WatchSettingsView: View {
             List {
                 Section("iCloud sync") {
                     Text(state.syncStatus).font(.caption2)
+                    Text(PushDiagnostics.summary).font(.caption2).foregroundStyle(.secondary)
                     Button("Sync now") { Task { await state.syncNow(reason: "manual") } }
                 }
             }

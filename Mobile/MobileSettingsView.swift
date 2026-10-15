@@ -15,6 +15,7 @@ struct MobileSettingsView: View {
                 Section("Reports") { TextField("Your name", text: $name).onChange(of: name) { if name != state.userName { state.userName = name } } }
                 Section("iCloud sync") {
                     Text(state.syncStatus).font(.caption)
+                    Text(PushDiagnostics.summary).font(.caption).foregroundStyle(.secondary)
                     Button("Sync now") { Task { await state.syncNow(reason: "manual") } }
                 }
                 Section("GitHub accounts") {

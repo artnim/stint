@@ -8,10 +8,14 @@ final class WatchDelegate: NSObject, WKApplicationDelegate {
         WKApplication.shared().registerForRemoteNotifications()   // R19: CloudKit's zone pushes trigger a sync
     }
 
+    func didRegisterForRemoteNotifications(withDeviceToken deviceToken: Data) { PushDiagnostics.registered() }
+    func didFailToRegisterForRemoteNotificationsWithError(_ error: Error) { PushDiagnostics.failed(error) }
+
     /// A silent CloudKit push: another device changed something. Sync, which also refreshes the complication.
     func didReceiveRemoteNotification(_ userInfo: [AnyHashable: Any],
                                       fetchCompletionHandler completionHandler: @escaping (WKBackgroundFetchResult) -> Void) {
         guard CloudKitTransport.isSyncNotification(userInfo) else { completionHandler(.noData); return }
+        PushDiagnostics.received()
         Task { @MainActor in
             await WatchState.shared.syncNow(reason: "push")
             completionHandler(.newData)
