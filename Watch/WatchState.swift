@@ -5,7 +5,8 @@ import WidgetKit
 
 @Observable @MainActor
 final class WatchState {
-    static weak var shared: WatchState?   // read only from @MainActor tasks
+    /// One instance on every launch path, including a background relaunch for a refresh task.
+    static let shared = WatchState()
     let db: AppDatabase
     var running: Entry?
     var lastFinished: Entry?
@@ -17,16 +18,16 @@ final class WatchState {
     var syncStatus = "Sync: not started"
     private let transport: CloudKitTransport
     private let engine: SyncEngine
+    private var writing = false   // a tap while a write is pending is ignored
 
     static var databaseURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "Stint/stint.sqlite")
     }
 
-    init() {
+    private init() {
         db = try! AppDatabase.open(at: Self.databaseURL)      // no alert path on the wrist; a failure here is a programming error
         transport = CloudKitTransport(database: db)
         engine = SyncEngine(database: db, transport: transport)
-        Self.shared = self
         refresh()
         NotificationCenter.default.addObserver(forName: CloudKitTransport.accountChangedNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.syncNow(reason: "account changed") }
@@ -53,27 +54,47 @@ final class WatchState {
 
     func projectName(_ id: Int64?) -> String { projects.first { $0.id == id }?.name ?? "" }
 
-    private func perform(_ reason: String, _ block: () throws -> Void) {
+    /// Pulls first (bounded, see `pullFirst`) so the write acts on fresh state: a Stop after the Mac already
+    /// stopped does nothing, a Start stops the entry that is actually running. Taps are serialized by ignoring
+    /// a second one while a write is pending.
+    private func perform(_ reason: String, _ block: () throws -> Void) async {
+        guard !writing else { return }
+        writing = true
+        defer { writing = false }
+        await pullFirst()
         do { try block(); lastError = nil } catch { lastError = "\(error)" }
         refresh()
         Task { await syncNow(reason: reason) }        // R19: a tap leaves the wrist at once
     }
 
-    func start(_ item: RecentItem) {
-        perform("start") { try db.start(description: item.description, projectId: item.projectId, repoId: item.repoId,
-                                        issueNumber: item.issueNumber, issueTitle: item.issueTitle) }
+    /// Returns when a sync finishes or after `timeout`, whichever comes first; offline or without iCloud the sync
+    /// returns at once and the write goes ahead as before (R10: never block the user). A sync still running at
+    /// the timeout completes in the background, and the engine is single-flight, so the post-write sync joins it.
+    /// Not a task group: a group waits for every child, and the CloudKit calls need not honour cancellation.
+    private func pullFirst(timeout: Duration = .seconds(3)) async {
+        let gate = Gate()
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            gate.continuation = c
+            Task { @MainActor in await self.syncNow(reason: "before write"); gate.open() }
+            Task { @MainActor in try? await Task.sleep(for: timeout); gate.open() }
+        }
     }
-    func startIssue(_ row: IssueRow) {
-        perform("start") { try db.start(description: "#\(row.issue.number): \(row.issue.title)", projectId: row.repo.projectId,
-                                        repoId: row.repo.id, issueNumber: row.issue.number, issueTitle: row.issue.title) }
+
+    func start(_ item: RecentItem) async {
+        await perform("start") { try db.start(description: item.description, projectId: item.projectId, repoId: item.repoId,
+                                              issueNumber: item.issueNumber, issueTitle: item.issueTitle) }
     }
-    func restartLast() {
+    func startIssue(_ row: IssueRow) async {
+        await perform("start") { try db.start(description: "#\(row.issue.number): \(row.issue.title)", projectId: row.repo.projectId,
+                                              repoId: row.repo.id, issueNumber: row.issue.number, issueTitle: row.issue.title) }
+    }
+    func restartLast() async {
         guard let e = lastFinished else { return }
-        perform("restart") { try db.start(description: e.description, projectId: e.projectId, repoId: e.repoId,
-                                          issueNumber: e.issueNumber, issueTitle: e.issueTitle, tags: e.tags) }
+        await perform("restart") { try db.start(description: e.description, projectId: e.projectId, repoId: e.repoId,
+                                                issueNumber: e.issueNumber, issueTitle: e.issueTitle, tags: e.tags) }
     }
-    func stop() { perform("stop") { try db.stopRunning() } }
-    func delete(_ entry: Entry) { perform("delete") { try db.delete(entry) } }
+    func stop() async { await perform("stop") { try db.stopRunning() } }
+    func delete(_ entry: Entry) async { await perform("delete") { try db.delete(entry) } }
 
     // MARK: sync
 
@@ -98,6 +119,13 @@ final class WatchState {
             syncStatus = "Synced \(stamp): \(s.pushed) up, \(s.pulled) down" + (s.deleted > 0 ? ", \(s.deleted) deleted" : "") + (s.failed > 0 ? ", \(s.failed) failed" : "")
         } catch {
             syncStatus = "Sync problem: \(error.localizedDescription)"
+            refresh()   // the pull may have applied before the push failed
         }
     }
+}
+
+/// Resumes its continuation once, whichever caller opens it first.
+@MainActor private final class Gate {
+    var continuation: CheckedContinuation<Void, Never>?
+    func open() { continuation?.resume(); continuation = nil }
 }

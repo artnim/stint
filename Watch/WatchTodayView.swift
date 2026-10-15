@@ -24,7 +24,7 @@ struct WatchTodayView: View {
             }
             .navigationTitle("Today")
             .confirmationDialog("Delete entry?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { if let e = pendingDelete { state.delete(e) }; pendingDelete = nil }
+                Button("Delete", role: .destructive) { if let e = pendingDelete { Task { await state.delete(e) } }; pendingDelete = nil }
                 Button("Cancel", role: .cancel) { pendingDelete = nil }
             }
         }

@@ -12,13 +12,13 @@ struct WatchStintView: View {
                         Text(r.description.isEmpty ? "—" : r.description).font(.headline).lineLimit(2)
                         Text(state.projectName(r.projectId)).font(.caption2).foregroundStyle(.secondary)
                         Text(r.startUTC, style: .timer).font(.title3).monospacedDigit()
-                        Button("Stop", role: .destructive) { state.stop() }
+                        Button("Stop", role: .destructive) { Task { await state.stop() } }
                     }
                 } else {
                     Section {
                         Text("Nothing running").foregroundStyle(.secondary)
                         if let last = state.lastFinished {
-                            Button { state.restartLast() } label: {
+                            Button { Task { await state.restartLast() } } label: {
                                 VStack(alignment: .leading) {
                                     Text("Restart last").font(.headline)
                                     Text(last.description.isEmpty ? "—" : last.description).font(.caption2).lineLimit(1)
@@ -30,7 +30,7 @@ struct WatchStintView: View {
                 if !state.recents.isEmpty {
                     Section("Recent") {
                         ForEach(state.recents, id: \.self) { item in
-                            Button { state.start(item) } label: {
+                            Button { Task { await state.start(item) } } label: {
                                 VStack(alignment: .leading) {
                                     Text(item.description.isEmpty ? "—" : item.description).lineLimit(2)
                                     Text(state.projectName(item.projectId)).font(.caption2).foregroundStyle(.secondary)
@@ -42,7 +42,7 @@ struct WatchStintView: View {
                 ForEach(groups) { group in
                     Section(group.name ?? "Unmapped") {
                         ForEach(group.rows) { row in
-                            Button { state.startIssue(row) } label: {
+                            Button { Task { await state.startIssue(row) } } label: {
                                 HStack(alignment: .top) {
                                     Image(systemName: row.issue.isPullRequest ? "arrow.triangle.pull" : "circle.dotted").foregroundStyle(.secondary)
                                     Text(verbatim: "#\(row.issue.number)").monospacedDigit().foregroundStyle(.secondary)
