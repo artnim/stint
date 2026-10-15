@@ -9,7 +9,9 @@ struct RunningEntry: TimelineEntry {
 
 struct RunningProvider: TimelineProvider {
     func placeholder(in context: Context) -> RunningEntry { RunningEntry(date: Date(), description: "#1403: Login", start: Date().addingTimeInterval(-1500)) }
-    func getSnapshot(in context: Context, completion: @escaping (RunningEntry) -> Void) { completion(current()) }
+    func getSnapshot(in context: Context, completion: @escaping (RunningEntry) -> Void) {
+        completion(context.isPreview ? placeholder(in: context) : current())
+    }
     func getTimeline(in context: Context, completion: @escaping (Timeline<RunningEntry>) -> Void) {
         completion(Timeline(entries: [current()], policy: .never))   // the app reloads the timeline on every change
     }
@@ -29,7 +31,7 @@ struct RunningView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) { ring; Text("Stint").font(.caption2).foregroundStyle(.secondary) }
                 if let start = entry.start {
-                    Text(entry.description?.isEmpty == false ? entry.description! : "—").font(.headline).lineLimit(1)
+                    Text(entry.description.flatMap { $0.isEmpty ? nil : $0 } ?? "—").font(.headline).lineLimit(1)
                     Text(start, style: .timer).font(.title3).monospacedDigit()
                 } else {
                     Text("—").font(.title3)

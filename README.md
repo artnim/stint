@@ -32,9 +32,9 @@ Requires macOS 14 or newer.
 - **Exact data, rounded report.** The database stores start and end as UTC instants and
   never a duration. Rounding and snapping happen only when a report is built, and the
   report total is always the sum of the (rounded) raw durations.
-- **iCloud sync and an iPhone companion.** Entries, projects and settings sync between
+- **iCloud sync, an iPhone companion and an Apple Watch app.** Entries, projects and settings sync between
   your Macs and an iPhone through your own iCloud account; the iPhone app starts and stops
-  timers and edits recent entries.
+  timers and edits recent entries; the watch app runs on its own.
 - **Import from solidtime.** Settings → Import reads a solidtime "detailed" CSV export,
   creating clients and projects from the file. Re-importing the same file adds nothing.
 
@@ -105,6 +105,16 @@ The iPhone app is installed from Xcode (scheme `StintMobile`) or from TestFlight
 Every build, Debug and Release on the Mac as well as the iPhone app, uses the production
 CloudKit environment, so there is exactly one copy of your data in iCloud.
 
+### Apple Watch
+
+The watch app is standalone: it starts, stops and restarts timers, and starts one from
+your recent entries or your assigned issues. It keeps the current month, shows the running
+stint in a complication, and syncs when it comes to the foreground, after every tap and
+about every 30 minutes in the background (watchOS decides the exact moment). It installs
+with the iPhone app from Xcode (the scheme `StintWatch` runs it on a paired watch) or from
+TestFlight. There is no GitHub token on the watch: the Mac and the phone publish the
+assigned-issue list through iCloud.
+
 ## Development
 
 The logic lives in the Swift package `TimeCore` (storage, rounding, report model, PDF
@@ -158,6 +168,19 @@ syncs, do these once:
    Production, after the development schema has all five record types (the first sync
    creates them). Without this a release build cannot sync.
 5. Tag the release.
+
+Watch release steps (do these before any 0.3.0 build runs, and in this order):
+
+1. In the CloudKit Console, open the container, Development schema, Record Types, and add
+   the record type `AssignedIssues` with the fields `fetchedAt` (Date/Time), `payload`
+   (String), `modifiedAt` (Date/Time) and `modifiedBy` (String). Then choose Deploy Schema
+   Changes to Production. Every build uses the Production environment, so a first sync does
+   not create this type. Until it is deployed, a 0.3.0 Mac or phone build reports sync
+   failures.
+2. In the developer portal, create the App Group `group.io.artnim.stint`.
+3. Create the App ID `io.artnim.stint.ios.watchkitapp` with iCloud (the Stint container)
+   and App Groups.
+4. Create the App ID `io.artnim.stint.ios.watchkitapp.widget` with App Groups.
 
 ### Release via GitHub Actions
 

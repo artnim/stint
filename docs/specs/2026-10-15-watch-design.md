@@ -1,7 +1,7 @@
 # Apple Watch companion — design
 
 Date: 2026-10-15
-Status: approved (design sections confirmed 2026-10-15)
+Status: implemented; on-watch verification pending (2026-10-15)
 
 Builds on `2026-10-14-sync-design.md`; rules R1–R16 apply unchanged. This document adds
 R17–R19 and amends the R2 table.
