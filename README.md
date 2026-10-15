@@ -109,8 +109,11 @@ CloudKit environment, so there is exactly one copy of your data in iCloud.
 
 The watch app is standalone: it starts, stops and restarts timers, and starts one from
 your recent entries or your assigned issues. It keeps the current month, shows the running
-stint in a complication, and syncs when it comes to the foreground, after every tap and
-about every 30 minutes in the background (watchOS decides the exact moment). It installs
+stint in a complication, and syncs when it comes to the foreground, after every tap, when
+iCloud pushes a change made on another device, and about every 30 minutes in the
+background (watchOS decides the exact moment of pushes and refreshes). To receive pushes
+the watch app asks for provisional notification permission; it shows no prompt and posts
+nothing. Settings on the watch and the phone show whether pushes arrive. It installs
 with the iPhone app from Xcode (the scheme `StintWatch` runs it on a paired watch) or from
 TestFlight. There is no GitHub token on the watch: the Mac and the phone publish the
 assigned-issue list through iCloud.
