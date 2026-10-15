@@ -13,7 +13,7 @@ public protocol SyncableRecord: FetchableRecord, MutablePersistableRecord {
 public enum SyncOp: String, Codable { case upsert, delete }
 
 public enum SyncTables {
-    public static let synced = ["client", "project", "repo", "entry"]
+    public static let synced = ["client", "project", "repo", "entry", "assignedIssues"]
     public static let syncedSettings: Set<String> = ["userName", "reportPresets"]
 }
 

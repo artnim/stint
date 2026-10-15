@@ -126,3 +126,34 @@ public struct Setting: Codable, Identifiable, Equatable, FetchableRecord, Persis
         self.key = key; self.value = value; self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy
     }
 }
+
+/// R18: the assigned-issue snapshot for the watch. One row per database, fixed uuid, written by the
+/// Mac and the phone after every issue sync, read by the watch. `payload` is JSON of [AssignedIssueItem].
+public struct AssignedIssues: Codable, Identifiable, Equatable, SyncableRecord {
+    public static let databaseTableName = "assignedIssues"
+    public static let fixedUUID = "00000000-0000-0000-0000-00000000a551"
+    public var id: Int64?
+    public var fetchedAt: Date
+    public var payload: String
+    public var uuid: String
+    public var modifiedAt: Date
+    public var modifiedBy: String
+    public var deletedAt: Date?
+
+    public init(id: Int64? = nil, uuid: String = AssignedIssues.fixedUUID, fetchedAt: Date, payload: String,
+                modifiedAt: Date = Date(), modifiedBy: String = "", deletedAt: Date? = nil) {
+        self.id = id; self.uuid = uuid; self.fetchedAt = fetchedAt; self.payload = payload
+        self.modifiedAt = modifiedAt; self.modifiedBy = modifiedBy; self.deletedAt = deletedAt
+    }
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+public struct AssignedIssueItem: Codable, Equatable {
+    public var repo: String       // owner/name
+    public var number: Int
+    public var title: String
+    public var project: String?   // project uuid
+    public init(repo: String, number: Int, title: String, project: String?) {
+        self.repo = repo; self.number = number; self.title = title; self.project = project
+    }
+}

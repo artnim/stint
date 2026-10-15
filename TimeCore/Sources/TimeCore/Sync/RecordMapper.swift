@@ -3,7 +3,7 @@ import Foundation
 /// Rows <-> transport records. References travel as uuid strings; resolving them to local
 /// ids is the engine's job, so `apply` never touches `projectId`/`clientId`/`repoId`.
 enum RecordMapper {
-    static let types = ["Client", "Project", "Repo", "Entry", "Setting"]
+    static let types = ["Client", "Project", "Repo", "Entry", "Setting", "AssignedIssues"]
 
     static func table(forType type: String) -> String? {
         switch type {
@@ -12,6 +12,7 @@ enum RecordMapper {
         case "Repo": return "repo"
         case "Entry": return "entry"
         case "Setting": return "setting"
+        case "AssignedIssues": return "assignedIssues"
         default: return nil
         }
     }
@@ -20,6 +21,16 @@ enum RecordMapper {
         ["modifiedAt": .date(modifiedAt), "modifiedBy": .string(modifiedBy)]
     }
     private static func opt(_ s: String?) -> SyncValue { s.map { .string($0) } ?? .null }
+
+    static func record(assignedIssues a: AssignedIssues) -> SyncRecord {
+        SyncRecord(type: "AssignedIssues", name: a.uuid, fields: stamps(a.modifiedAt, a.modifiedBy).merging(
+            ["fetchedAt": .date(a.fetchedAt), "payload": .string(a.payload)]) { $1 })
+    }
+    static func apply(_ r: SyncRecord, to a: inout AssignedIssues) {
+        a.fetchedAt = r.date("fetchedAt") ?? a.fetchedAt
+        a.payload = r.string("payload") ?? a.payload
+        applyStamps(r, &a.modifiedAt, &a.modifiedBy)
+    }
 
     static func record(client c: Client) -> SyncRecord {
         SyncRecord(type: "Client", name: c.uuid, fields: stamps(c.modifiedAt, c.modifiedBy).merging(

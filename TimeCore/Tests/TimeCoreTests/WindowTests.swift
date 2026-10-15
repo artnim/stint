@@ -51,4 +51,26 @@ final class WindowTests: XCTestCase {
         try db.start(description: "running", projectId: nil, at: now.addingTimeInterval(-1800))
         XCTAssertEqual(try db.monthTotalHours(now: now, calendar: berlin), 2.0, accuracy: 1e-9)
     }
+
+    // R17 / Review Focus 4: a one-month window prunes last month's finished entries only.
+    func testOneMonthWindowKeepsRunningAndPending() throws {
+        let db = try AppDatabase.inMemory()
+        let cal = Calendar(identifier: .gregorian)
+        let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 12))!
+        let lastMonth = cal.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 9))!
+        try db.start(description: "september", projectId: nil, at: lastMonth)
+        _ = try db.stopRunning(at: lastMonth.addingTimeInterval(3600))
+        try db.start(description: "pending september", projectId: nil, at: lastMonth.addingTimeInterval(7200))
+        _ = try db.stopRunning(at: lastMonth.addingTimeInterval(9000))
+        try db.start(description: "october", projectId: nil, at: now.addingTimeInterval(-3600))
+        _ = try db.stopRunning(at: now.addingTimeInterval(-1800))
+        try db.start(description: "running since september", projectId: nil, at: lastMonth.addingTimeInterval(20000))
+        // everything except "pending september" has been pushed
+        try db.write { try $0.execute(sql: "DELETE FROM outbox WHERE uuid != (SELECT uuid FROM entry WHERE description = 'pending september')") }
+        let cutoff = windowStart(now: now, months: 1, calendar: cal)
+        XCTAssertEqual(cutoff, cal.date(from: DateComponents(year: 2026, month: 10, day: 1))!)
+        XCTAssertEqual(try db.pruneEntries(startingBefore: cutoff), 1)
+        let left = try db.entries(from: lastMonth, to: now.addingTimeInterval(86400)).map(\.description).sorted()
+        XCTAssertEqual(left, ["october", "pending september", "running since september"])
+    }
 }

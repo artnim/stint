@@ -117,6 +117,8 @@ public actor SyncEngine {
                 e.projectId = try resolve(Project.self, uuid: r.string("projectUUID"), in: db)
                 e.repoId = try resolve(Repo.self, uuid: r.string("repoUUID"), in: db)
             }
+        case "AssignedIssues":
+            return try upsert(r, in: db, make: { AssignedIssues(uuid: r.name, fetchedAt: .distantPast, payload: "[]") }) { a, _ in RecordMapper.apply(r, to: &a) }
         case "Setting":
             guard SyncTables.syncedSettings.contains(r.name) else { return false }
             let remoteAt = r.date("modifiedAt") ?? .distantPast
@@ -251,6 +253,9 @@ public actor SyncEngine {
             let project = try e.projectId.flatMap { try Project.fetchOne(db, key: $0) }
             let repo = try e.repoId.flatMap { try Repo.fetchOne(db, key: $0) }
             return RecordMapper.record(entry: e, projectUUID: project?.uuid, repoUUID: repo?.uuid)
+        case "assignedIssues":
+            guard let a: AssignedIssues = try db.fetchByUUID(uuid: uuid), a.deletedAt == nil else { return nil }
+            return RecordMapper.record(assignedIssues: a)
         case "setting":
             guard let s = try Setting.fetchOne(db, key: uuid) else { return nil }
             return RecordMapper.record(settingKey: s.key, value: s.value, modifiedAt: s.modifiedAt, modifiedBy: s.modifiedBy)

@@ -55,6 +55,7 @@ public enum AccountSync {
         var applied = false
         if !merged.isEmpty || failed == 0 {
             applied = (try? IssueSync.apply(merged, to: db, closeMissing: failed == 0)) != nil
+            if applied { try? db.writeAssignedIssueSnapshot() }                       // R18: feed the watch
         }
         return AccountSyncOutcome(rejectedLabels: rejected, failed: failed, applied: applied)
     }

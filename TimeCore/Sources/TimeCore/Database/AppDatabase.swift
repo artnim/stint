@@ -128,7 +128,7 @@ public final class AppDatabase {
                 t.add(column: "modifiedBy", .text).notNull().defaults(to: deviceId)
             }
             try Setting(key: "deviceId", value: deviceId, modifiedAt: now, modifiedBy: deviceId).insert(db)
-            for table in SyncTables.synced {
+            for table in ["client", "project", "repo", "entry"] {   // the tables that existed at v3; later synced tables create their own columns
                 try db.alter(table: table) { t in
                     t.add(column: "uuid", .text).notNull().defaults(to: "")
                     t.add(column: "modifiedAt", .datetime).notNull().defaults(to: now)
@@ -157,6 +157,19 @@ public final class AppDatabase {
                 t.column("recordName", .text).primaryKey()
                 t.column("systemFields", .blob).notNull()
             }
+        }
+        // R18: one synced row holding the assigned-issue list for the watch.
+        m.registerMigration("v5-assigned-issues") { db in
+            try db.create(table: "assignedIssues") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("fetchedAt", .datetime).notNull()
+                t.column("payload", .text).notNull()
+                t.column("uuid", .text).notNull()
+                t.column("modifiedAt", .datetime).notNull()
+                t.column("modifiedBy", .text).notNull()
+                t.column("deletedAt", .datetime)
+            }
+            try db.execute(sql: "CREATE UNIQUE INDEX assignedIssues_uuid ON assignedIssues(uuid)")
         }
         return m
     }
