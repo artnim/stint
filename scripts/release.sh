@@ -17,7 +17,6 @@ cd "$(dirname "$0")/.."
 NOTARY_PROFILE="${NOTARY_PROFILE:-stint-notary}"
 NOTARIZE=1
 [ "${1:-}" = "--no-notarize" ] && NOTARIZE=0
-DMGBUILD_VERSION=1.6.7
 
 VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml | head -1)   # every target carries it
 [ -n "$VERSION" ] || { echo "MARKETING_VERSION not found in project.yml" >&2; exit 1; }
@@ -91,7 +90,9 @@ fi
 
 echo "==> building the DMG"
 python3 -m venv "$DERIVED/dmgbuild-venv"
-"$DERIVED/dmgbuild-venv/bin/pip" install --quiet "dmgbuild==$DMGBUILD_VERSION"
+# every package pinned with its wheel hash (scripts/dmg/requirements.txt): this job holds the signing keys
+"$DERIVED/dmgbuild-venv/bin/pip" install --quiet --require-hashes --only-binary :all: --no-deps \
+  -r scripts/dmg/requirements.txt
 swift scripts/dmg/background.swift 1 "$DERIVED/dmg-bg.png" >/dev/null
 swift scripts/dmg/background.swift 2 "$DERIVED/dmg-bg@2x.png" >/dev/null
 tiffutil -cathidpicheck "$DERIVED/dmg-bg.png" "$DERIVED/dmg-bg@2x.png" -out "$DERIVED/dmg-bg.tiff" >/dev/null
