@@ -50,6 +50,10 @@ final class AssignedIssuesTests: XCTestCase {
         let web = try watch.db_addRepoForTest("acme/web")
         var stale = IssueCache(repoId: web.id!, number: 99, title: "Old", isPullRequest: false, state: "open", updatedAt: t0)
         try watch.insert(&stale)
+        try watch.start(description: "watch work", projectId: nil, at: t0)
+        _ = try watch.stopRunning(at: t0.addingTimeInterval(600))
+        let entriesBefore = try watch.entries(from: t0, to: t0.addingTimeInterval(86400))
+        XCTAssertEqual(entriesBefore.count, 1)
         let payload = #"[{"repo":"acme/api","number":2,"title":"Rate limit","project":null},{"repo":"acme/web","number":7,"title":"Login","project":null}]"#
         var row = AssignedIssues(uuid: AssignedIssues.fixedUUID, fetchedAt: t0, payload: payload)
         try watch.write { try $0.syncInsert(&row, deviceId: "x", now: self.t0) }
@@ -59,6 +63,39 @@ final class AssignedIssuesTests: XCTestCase {
         XCTAssertTrue(rows[0].issue.assignedToMe)
         XCTAssertEqual(rows[0].issue.state, "open")
         XCTAssertEqual(rows[0].issue.updatedAt, t0)
+        XCTAssertEqual(try watch.entries(from: t0, to: t0.addingTimeInterval(86400)), entriesBefore, "entries are untouched")
+    }
+
+    // Pull requests keep their flag through writer and reader.
+    func testPullRequestFlagSurvives() throws {
+        let mac = try AppDatabase.inMemory()
+        _ = try mac.addRepo(fullName: "acme/web")
+        try IssueSync.apply([GitHubIssue(repoOwner: "acme", repoName: "web", number: 5, title: "Fix", isPullRequest: true, state: "open", updatedAt: t0, assignedToMe: true)], to: mac)
+        try mac.writeAssignedIssueSnapshot(now: t0)
+        let row = try mac.read { try AssignedIssues.fetchOne($0) }!
+        let items = try JSONDecoder().decode([AssignedIssueItem].self, from: Data(row.payload.utf8))
+        XCTAssertEqual(items.map(\.pr), [true])
+        let watch = try AppDatabase.inMemory()
+        _ = try watch.addRepo(fullName: "acme/web")
+        var copy = AssignedIssues(uuid: AssignedIssues.fixedUUID, fetchedAt: t0, payload: row.payload)
+        try watch.write { try $0.syncInsert(&copy, deviceId: "x", now: self.t0) }
+        XCTAssertEqual(try watch.applyAssignedIssueSnapshot(), 1)
+        XCTAssertTrue(try watch.openIssueRows()[0].issue.isPullRequest)
+    }
+
+    // Two devices create the fixed-uuid row before either syncs; they converge on the newer one.
+    func testTwoDevicesCreatingTheRowConverge() async throws {
+        let server = InMemorySyncServer()
+        let a = try makeDevice(server), b = try makeDevice(server)
+        try a.db.writeAssignedIssueSnapshot(now: t0)
+        try b.db.writeAssignedIssueSnapshot(now: t0.addingTimeInterval(60))
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        _ = try await a.engine.sync(); _ = try await b.engine.sync()
+        let ra = try a.db.read { try AssignedIssues.fetchOne($0) }!, rb = try b.db.read { try AssignedIssues.fetchOne($0) }!
+        XCTAssertEqual(ra.fetchedAt, t0.addingTimeInterval(60))
+        XCTAssertEqual(rb.fetchedAt, t0.addingTimeInterval(60))
+        XCTAssertEqual(ra.payload, rb.payload)
+        XCTAssertEqual(try a.db.pendingOutbox(), []); XCTAssertEqual(try b.db.pendingOutbox(), [])
     }
 
     // Review Focus 2: the repo arrives after the snapshot; re-running the reader picks the issue up.

@@ -11,7 +11,8 @@ extension AppDatabase {
                 .compactMap { i -> AssignedIssueItem? in
                     guard let repo = repos[i.repoId] else { return nil }
                     return AssignedIssueItem(repo: repo.fullName, number: i.number, title: i.title,
-                                             project: repo.projectId.flatMap { projects[$0] })
+                                             project: repo.projectId.flatMap { projects[$0] },
+                                             pr: i.isPullRequest ? true : nil)
                 }
                 .sorted { ($0.repo, $0.number) < ($1.repo, $1.number) }
             let encoder = JSONEncoder()
@@ -41,7 +42,7 @@ extension AppDatabase {
             for item in items {
                 guard let repoId = repos[item.repo] else { continue }
                 var cached = IssueCache(repoId: repoId, number: item.number, title: item.title,
-                                        isPullRequest: false, state: "open", updatedAt: row.fetchedAt, assignedToMe: true)
+                                        isPullRequest: item.pr ?? false, state: "open", updatedAt: row.fetchedAt, assignedToMe: true)
                 try cached.insert(db)
                 count += 1
             }

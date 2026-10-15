@@ -70,6 +70,9 @@ final class WindowTests: XCTestCase {
         let cutoff = windowStart(now: now, months: 1, calendar: cal)
         XCTAssertEqual(cutoff, cal.date(from: DateComponents(year: 2026, month: 10, day: 1))!)
         XCTAssertEqual(try db.pruneEntries(startingBefore: cutoff), 1)
+        // the outbox has no uniqueness (start and stop both queued), so compare the distinct rows
+        let pendingUUID = try db.read { try String.fetchOne($0, sql: "SELECT uuid FROM entry WHERE description = 'pending september'") }!
+        XCTAssertEqual(Set(try db.pendingOutbox().map { "\($0.tableName):\($0.uuid):\($0.op)" }), ["entry:\(pendingUUID):upsert"], "pruning logs nothing; only the pending row is queued")
         let left = try db.entries(from: lastMonth, to: now.addingTimeInterval(86400)).map(\.description).sorted()
         XCTAssertEqual(left, ["october", "pending september", "running since september"])
     }

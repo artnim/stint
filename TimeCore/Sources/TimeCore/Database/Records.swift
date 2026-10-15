@@ -153,7 +153,8 @@ public struct AssignedIssueItem: Codable, Equatable {
     public var number: Int
     public var title: String
     public var project: String?   // project uuid
-    public init(repo: String, number: Int, title: String, project: String?) {
-        self.repo = repo; self.number = number; self.title = title; self.project = project
+    public var pr: Bool?          // true for a pull request; absent otherwise (older payloads decode too)
+    public init(repo: String, number: Int, title: String, project: String?, pr: Bool? = nil) {
+        self.repo = repo; self.number = number; self.title = title; self.project = project; self.pr = pr
     }
 }
