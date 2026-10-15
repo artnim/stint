@@ -36,7 +36,8 @@ rm -rf "$OUT"
 xcodebuild archive -scheme StintMobile -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" -derivedDataPath "$OUT/derived" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} \
-  2>&1 | grep -E "error:|warning: .*(Mobile|Watch)/|ARCHIVE" || true
+  > "$OUT/archive.log" 2>&1 || { grep -E "error" "$OUT/archive.log" >&2; echo "archive failed (log: $OUT/archive.log)" >&2; exit 1; }
+grep -E "warning: .*(Mobile|Watch)/|ARCHIVE" "$OUT/archive.log" || true
 [ -d "$ARCHIVE/Products/Applications/StintMobile.app" ] || { echo "archive failed" >&2; exit 1; }
 [ -d "$ARCHIVE/Products/Applications/StintMobile.app/Watch/StintWatch.app" ] \
   || { echo "archive is missing the embedded watch app" >&2; exit 1; }
@@ -60,8 +61,9 @@ EOF
 
 echo "==> exporting ($DEST)"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$OUT/ExportOptions.plist" \
-  -exportPath "$OUT/export" -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} 2>&1 \
-  | grep -E "error|Upload|EXPORT|Progress" || true
+  -exportPath "$OUT/export" -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} > "$OUT/export.log" 2>&1 \
+  || { grep -E "error|failed" "$OUT/export.log" >&2; echo "export failed (log: $OUT/export.log)" >&2; exit 1; }
+grep -E "EXPORT|Upload succeeded" "$OUT/export.log" || true
 if [ "$UPLOAD" = 1 ]; then
   echo "==> uploaded $VERSION ($BUILD_NUMBER); TestFlight shows it after processing (about 10-30 minutes)"
 else

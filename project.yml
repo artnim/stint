@@ -116,7 +116,8 @@ targets:
         WKApplication: true
         WKCompanionAppBundleIdentifier: io.artnim.stint.ios
         WKRunsIndependentlyOfCompanionApp: true
-        WKBackgroundModes: [remote-notification]   # silent CloudKit pushes (R19)
+        # silent CloudKit pushes (R19); WKBackgroundModes rejects this value at App Store upload
+        UIBackgroundModes: [remote-notification]
         ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Watch/StintWatch.entitlements
