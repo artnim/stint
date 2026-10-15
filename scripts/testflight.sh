@@ -32,7 +32,7 @@ echo "==> generating project"
 xcodegen generate --quiet
 
 echo "==> archiving StintMobile $VERSION ($BUILD_NUMBER)"
-rm -rf "$OUT"
+rm -rf "$OUT" && mkdir -p "$OUT"
 xcodebuild archive -scheme StintMobile -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" -derivedDataPath "$OUT/derived" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} \
