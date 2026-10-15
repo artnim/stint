@@ -12,8 +12,16 @@ struct RunningProvider: TimelineProvider {
     func getSnapshot(in context: Context, completion: @escaping (RunningEntry) -> Void) {
         completion(context.isPreview ? placeholder(in: context) : current())
     }
+    /// Idle: one entry, never refreshed (the app reloads on every change). Running: one entry per elapsed
+    /// minute for the next three hours, so the circular gauge and its h:mm label advance on their own.
     func getTimeline(in context: Context, completion: @escaping (Timeline<RunningEntry>) -> Void) {
-        completion(Timeline(entries: [current()], policy: .never))   // the app reloads the timeline on every change
+        let now = current()
+        guard let start = now.start else { completion(Timeline(entries: [now], policy: .never)); return }
+        let elapsedMinutes = max(0, floor(now.date.timeIntervalSince(start) / 60))
+        let following = (1...180).map { i in
+            RunningEntry(date: start.addingTimeInterval((elapsedMinutes + Double(i)) * 60), description: now.description, start: start)
+        }
+        completion(Timeline(entries: [now] + following, policy: .atEnd))
     }
     private func current() -> RunningEntry {
         let s = ComplicationStore.load()
@@ -39,11 +47,21 @@ struct RunningView: View {
             }
         case .accessoryInline:
             if let start = entry.start { Text("Stint · \(start, style: .timer)") } else { Text("Stint · —") }
-        default:   // .accessoryCircular
-            VStack(spacing: 0) {
-                ring
-                if let start = entry.start { Text(start, style: .timer).font(.caption2).monospacedDigit().minimumScaleFactor(0.6) }
-                else { Text("—").font(.caption2) }
+        default:   // .accessoryCircular: the ring fills over each hour, the total runs inside as h:mm
+            if let start = entry.start {
+                let minutes = Int(max(0, entry.date.timeIntervalSince(start)) / 60)
+                Gauge(value: Double(minutes % 60), in: 0...60) {
+                    Text("Stint")
+                } currentValueLabel: {
+                    Text(verbatim: String(format: "%d:%02d", minutes / 60, minutes % 60))
+                        .font(.system(.title3, design: .rounded)).monospacedDigit().minimumScaleFactor(0.5)
+                }
+                .gaugeStyle(.accessoryCircularCapacity)
+            } else {
+                ZStack {
+                    AccessoryWidgetBackground()
+                    Image("MenuBarIcon").renderingMode(.template).resizable().scaledToFit().padding(10)
+                }
             }
         }
     }
