@@ -40,9 +40,9 @@ Requires macOS 14 or newer.
 
 ## Install
 
-Download `Stint-<version>.zip` from the latest release, unzip, and move
-`Stint.app` to Applications. The app is signed and notarized; macOS opens it
-without a warning. It has no Dock icon; look for the clock in the menu bar.
+Download `Stint-<version>.dmg` from the latest release, open it, and drag Stint onto
+the Applications folder next to it. The app and the disk image are signed and
+notarized; macOS opens them without a warning. It has no Dock icon; look for the clock in the menu bar.
 
 To build it yourself:
 
@@ -136,8 +136,10 @@ needs a real identity. Contributors without a team can build with
 
 `scripts/release.sh` builds a Release configuration signed with the Developer ID
 Application certificate (hardened runtime, secure timestamp), notarizes it with
-`notarytool`, staples the ticket and writes `dist/Stint-<version>.zip`. It always
-builds from scratch in `build-release/`.
+`notarytool`, staples the ticket, packs it into a drag-to-Applications disk image
+(`scripts/dmg/`, built with dmgbuild in a throwaway virtualenv), signs, notarizes and
+staples the image too, and writes `dist/Stint-<version>.dmg`. It always builds from
+scratch in `build-release/`. `--no-notarize` skips both notarizations.
 
 One-time setup for local notarization (an app-specific password stored in the login
 keychain):
@@ -190,7 +192,7 @@ Watch release steps (do these before any 0.3.0 build runs, and in this order):
 
 Pushing a tag `vX.Y.Z` that matches `MARKETING_VERSION` runs `.github/workflows/release.yml`:
 tests, a signed and notarized build via `scripts/release.sh`, and a GitHub release with
-the zip. It needs six repository secrets: `MACOS_CERT_P12_BASE64` and
+the DMG. It needs six repository secrets: `MACOS_CERT_P12_BASE64` and
 `MACOS_CERT_PASSWORD` (the Developer ID Application identity exported from Keychain
 Access), and `APP_STORE_CONNECT_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`,
 `APP_STORE_CONNECT_ISSUER_ID` (an App Store Connect API key with the Developer role,
