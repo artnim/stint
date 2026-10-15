@@ -13,7 +13,6 @@ final class WatchState {
     var projects: [Project] = []
     var issueRows: [IssueRow] = []
     var today: [Entry] = []
-    var now = Date()
     var lastError: String?
     var syncStatus = "Sync: not started"
     private let transport: CloudKitTransport
@@ -29,9 +28,6 @@ final class WatchState {
         engine = SyncEngine(database: db, transport: transport)
         Self.shared = self
         refresh()
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.now = Date() }
-        }
         NotificationCenter.default.addObserver(forName: CloudKitTransport.accountChangedNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.syncNow(reason: "account changed") }
         }
@@ -45,20 +41,17 @@ final class WatchState {
             issueRows = try db.openIssueRows()
             let cal = Calendar.current
             let dayStart = cal.startOfDay(for: Date())
-            today = try db.entries(from: dayStart, to: dayStart.addingTimeInterval(86400)).reversed()
+            today = try db.entries(from: dayStart, to: cal.date(byAdding: .day, value: 1, to: dayStart)!).reversed()
             lastFinished = try db.finishedEntries(from: windowStart(now: Date(), months: 1, calendar: cal), to: Date().addingTimeInterval(86400)).last
-            now = Date()
         } catch { lastError = "\(error)" }
-        ComplicationStore.save(.init(description: running?.description, start: running?.startUTC))
-        WidgetCenter.shared.reloadAllTimelines()
+        let snapshot = ComplicationStore.Snapshot(description: running?.description, start: running?.startUTC)
+        if snapshot != ComplicationStore.load() {
+            ComplicationStore.save(snapshot)
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     func projectName(_ id: Int64?) -> String { projects.first { $0.id == id }?.name ?? "" }
-
-    func elapsed(_ e: Entry) -> String {
-        let s = Int(max(0, now.timeIntervalSince(e.startUTC)))
-        return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
-    }
 
     private func perform(_ reason: String, _ block: () throws -> Void) {
         do { try block(); lastError = nil } catch { lastError = "\(error)" }
@@ -102,7 +95,7 @@ final class WatchState {
             try db.applyAssignedIssueSnapshot()                                                          // R18, after every cycle (Review Focus 2)
             refresh()
             let stamp = Date().formatted(date: .omitted, time: .shortened)
-            syncStatus = "Synced \(stamp): \(s.pushed) up, \(s.pulled) down" + (s.failed > 0 ? ", \(s.failed) failed" : "")
+            syncStatus = "Synced \(stamp): \(s.pushed) up, \(s.pulled) down" + (s.deleted > 0 ? ", \(s.deleted) deleted" : "") + (s.failed > 0 ? ", \(s.failed) failed" : "")
         } catch {
             syncStatus = "Sync problem: \(error.localizedDescription)"
         }
