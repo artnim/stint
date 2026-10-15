@@ -174,7 +174,10 @@ final class AppState {
         let accounts = KeychainStore.githubAccounts().map { GitHubAccountCredential(label: $0.label, token: $0.token) }
         guard !accounts.isEmpty else { githubError = "No GitHub token. Add one in Settings → GitHub."; return }
         let outcome = await AccountSync.run(accounts: accounts, db: db, closedSince: Self.closedSearchCutoff)
-        if outcome.applied { refresh() }
+        if outcome.applied {
+            refresh()
+            scheduleSync()   // the snapshot (R18) leaves soon; nothing to push when unchanged
+        }
         githubError = outcome.rejectedLabels.isEmpty ? nil
             : "GitHub rejected the token for \(outcome.rejectedLabels.joined(separator: ", ")) (401). Check Settings → GitHub."
     }
