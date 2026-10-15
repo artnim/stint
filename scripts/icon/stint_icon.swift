@@ -12,10 +12,12 @@ func usage() -> Never { fputs("usage: stint_icon.swift app <size> <out> | menuba
 guard args.count >= 4 else { usage() }
 let mode = args[1]
 
-func context(_ size: Int) -> CGContext {
+/// `opaque`: no alpha channel at all (App Store Connect rejects an app icon that has one, even fully opaque).
+func context(_ size: Int, opaque: Bool = false) -> CGContext {
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    let alpha: CGImageAlphaInfo = opaque ? .noneSkipLast : .premultipliedLast
     let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-                        space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                        space: cs, bitmapInfo: alpha.rawValue)!
     ctx.setAllowsAntialiasing(true)
     ctx.setShouldAntialias(true)
     return ctx
@@ -73,7 +75,7 @@ func drawClock(_ ctx: CGContext, w: CGFloat, ring: CGColor, tick: CGColor?, arc:
 switch mode {
 case "app":
     guard args.count == 4, let size = Int(args[2]) else { usage() }
-    let ctx = context(size)
+    let ctx = context(size, opaque: true)
     let w = CGFloat(size)
     // full-bleed: the system applies the icon shape, so no inset and no rounded corners
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!

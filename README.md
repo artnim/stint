@@ -195,11 +195,28 @@ tests, a signed and notarized build via `scripts/release.sh`, and a GitHub relea
 the DMG. It needs six repository secrets: `MACOS_CERT_P12_BASE64` and
 `MACOS_CERT_PASSWORD` (the Developer ID Application identity exported from Keychain
 Access), and `APP_STORE_CONNECT_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`,
-`APP_STORE_CONNECT_ISSUER_ID` (an App Store Connect API key with the Developer role,
-used by `notarytool`), and `MACOS_PROVISIONING_PROFILE_BASE64` (the `Stint Developer ID`
-profile, see above).
+`APP_STORE_CONNECT_ISSUER_ID` (an App Store Connect API key, used by `notarytool` and by
+the TestFlight upload; it needs the Admin role so automatic signing can create the
+distribution certificate and profiles), and `MACOS_PROVISIONING_PROFILE_BASE64` (the
+`Stint Developer ID` profile, see above).
+
+After the Mac release, a second job uploads the iPhone app, with the watch app and its
+complication inside, to TestFlight via `scripts/testflight.sh` (on a `macos-26` runner,
+because App Store Connect requires a current SDK). The build number is the commit count, as
+on the Mac. `scripts/testflight.sh` also runs locally with the Apple ID signed in to Xcode;
+`--no-upload` stops after exporting the `.ipa`.
 
     git tag v0.1.0 && git push origin v0.1.0
+
+### TestFlight, one-time setup
+
+1. In App Store Connect, add a new iOS app with the bundle ID `io.artnim.stint.ios`. The
+   store name only matters if the app is ever published.
+2. Give the API key in the repository secrets the Admin role (Users and Access →
+   Integrations → App Store Connect API).
+3. After the first build is processed, add yourself as an internal tester in TestFlight and
+   install Stint from the TestFlight app on the iPhone; the watch app follows. Internal
+   testing needs no App Review.
 
 ## Credits
 

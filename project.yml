@@ -75,6 +75,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIBackgroundModes: [remote-notification]
+        ITSAppUsesNonExemptEncryption: false   # HTTPS only; skips the export question per TestFlight build
     entitlements:
       path: Mobile/StintMobile.entitlements
       properties:
@@ -116,6 +117,7 @@ targets:
         WKCompanionAppBundleIdentifier: io.artnim.stint.ios
         WKRunsIndependentlyOfCompanionApp: true
         WKBackgroundModes: [remote-notification]   # silent CloudKit pushes (R19)
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Watch/StintWatch.entitlements
       properties:

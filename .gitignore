@@ -10,3 +10,4 @@ fixtures/private/
 build/
 dist/
 build-release/
+build-testflight/
