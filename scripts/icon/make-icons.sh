@@ -17,6 +17,7 @@ for spec in 16:1 16:2 32:1 32:2 128:1 128:2 256:1 256:2 512:1 512:2; do
   images="$images{\"filename\":\"$file\",\"idiom\":\"mac\",\"scale\":\"${scale}x\",\"size\":\"${pt}x${pt}\"},"
 done
 images="$images{\"filename\":\"icon_1024.png\",\"idiom\":\"universal\",\"platform\":\"ios\",\"size\":\"1024x1024\"},"
+images="$images{\"filename\":\"icon_1024.png\",\"idiom\":\"universal\",\"platform\":\"watchos\",\"size\":\"1024x1024\"},"
 swift "$GEN" app 1024 "$SET/icon_1024.png" >/dev/null
 printf '{"images":[%s],"info":{"author":"xcode","version":1}}\n' "${images%,}" > "$SET/Contents.json"
 
