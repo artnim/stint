@@ -53,6 +53,7 @@ foreign keys inside one device; across devices rows are identified by `uuid` onl
 | `entry` | yes | whole row; `projectId`/`repoId` travel as uuids |
 | `setting` | yes, per key | `userName`, `reportPresets`; never `databasePath` |
 | `issueCache` | no | derived from GitHub on each device |
+| `assignedIssues` | yes | one row, the assigned-issue snapshot for the watch (R18 in `2026-10-15-watch-design.md`) |
 
 ### R3 Last-writer-wins per row
 
