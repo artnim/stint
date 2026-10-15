@@ -117,8 +117,9 @@ Screens, a vertical page stack:
 ## 5. Complication
 
 WidgetKit accessory families `accessoryRectangular`, `accessoryCircular`, `accessoryInline`.
-The store is `UserDefaults(suiteName: "group.io.artnim.stint")` with keys
-`runningDescription` (String?) and `runningStart` (Date?), written by the watch app only.
+The store is `UserDefaults(suiteName: "group.io.artnim.stint")` holding one JSON value under
+the key `complication` with the fields `description` (String?) and `start` (Date?), written by
+the watch app only and only when it changed.
 Rectangular: description (one line) over a live timer; circular: the Stint ring icon with
 elapsed minutes below; inline: "Stint · h:mm" or "Stint · —". With nothing running every
 family shows the ring and "—". The timeline has a single entry; the timer text ticks on
