@@ -35,7 +35,7 @@ jobs:
 
       - name: Check tag matches MARKETING_VERSION
         run: |
-          version=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml)
+          version=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml | head -1)   # both targets carry it
           [ "v$version" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != v$version in project.yml" >&2; exit 1; }
 
       - name: Import signing certificate

@@ -92,3 +92,22 @@ targets:
         MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+# explicit shared schemes: xcodebuild -scheme needs them on a freshly generated project
+# (Xcode's automatic per-target schemes only exist after the project was opened in Xcode)
+schemes:
+  Stint:
+    build:
+      targets:
+        Stint: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  StintMobile:
+    build:
+      targets:
+        StintMobile: all
+    run:
+      config: Debug
+    archive:
+      config: Release

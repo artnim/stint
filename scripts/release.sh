@@ -15,7 +15,7 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-stint-notary}"
 NOTARIZE=1
 [ "${1:-}" = "--no-notarize" ] && NOTARIZE=0
 
-VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml)
+VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml | head -1)   # both targets carry it
 [ -n "$VERSION" ] || { echo "MARKETING_VERSION not found in project.yml" >&2; exit 1; }
 BUILD_NUMBER=$(git rev-list --count HEAD)
 # a clean, dedicated derived-data dir: an incremental build can re-copy resource bundles
