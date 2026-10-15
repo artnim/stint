@@ -9,10 +9,19 @@ struct WatchStintView: View {
             List {
                 if let r = state.running {
                     Section {
-                        Text(r.description.isEmpty ? "—" : r.description).font(.headline).lineLimit(2)
-                        Text(state.projectName(r.projectId)).font(.caption2).foregroundStyle(.secondary)
-                        Text(r.startUTC, style: .timer).font(.title3).monospacedDigit()
-                        Button("Stop", role: .destructive) { Task { await state.stop() } }
+                        // one card: what, for whom, how long
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(r.description.isEmpty ? "—" : r.description).font(.headline).lineLimit(2)
+                            let project = state.projectName(r.projectId)
+                            if !project.isEmpty {
+                                Text(project).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Text(r.startUTC, style: .timer).font(.title2).monospacedDigit()
+                        }
+                        .padding(.vertical, 4)
+                        Button(role: .destructive) { Task { await state.stop() } } label: {
+                            Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity)
+                        }
                     }
                 } else {
                     Section {
