@@ -32,9 +32,9 @@ Requires macOS 14 or newer.
 - **Exact data, rounded report.** The database stores start and end as UTC instants and
   never a duration. Rounding and snapping happen only when a report is built, and the
   report total is always the sum of the (rounded) raw durations.
-- **iCloud sync, an iPhone companion and an Apple Watch app.** Entries, projects and settings sync between
-  your Macs and an iPhone through your own iCloud account; the iPhone app starts and stops
-  timers and edits recent entries; the watch app runs on its own.
+- **iCloud sync, an iPhone companion and an Apple Watch app.** Entries, projects and
+  settings sync between your Macs and an iPhone through your own iCloud account; the iPhone
+  app starts and stops timers and edits recent entries; the watch app runs on its own.
 - **Import from solidtime.** Settings → Import reads a solidtime "detailed" CSV export,
   creating clients and projects from the file. Re-importing the same file adds nothing.
 
@@ -165,8 +165,9 @@ syncs, do these once:
        base64 -i "$p" | gh secret set MACOS_PROVISIONING_PROFILE_BASE64 --repo artnim/stint
 
 4. In the CloudKit Console, open the container, Schema, and choose Deploy Schema Changes to
-   Production, after the development schema has all five record types (the first sync
-   creates them). Without this a release build cannot sync.
+   Production, after the development schema has the record types the first sync creates,
+   plus `AssignedIssues`, which watch release step 1 adds by hand. Without this a release
+   build cannot sync.
 5. Tag the release.
 
 Watch release steps (do these before any 0.3.0 build runs, and in this order):

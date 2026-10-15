@@ -44,6 +44,26 @@ final class AssignedIssuesTests: XCTestCase {
         XCTAssertEqual(try db.read { try AssignedIssues.fetchCount($0) }, 1)
     }
 
+    // Final review 2: an unchanged payload is not stamped or logged again; a changed one is.
+    func testUnchangedPayloadIsNotRestamped() throws {
+        let db = try AppDatabase.inMemory()
+        _ = try seedMac(db)
+        try db.write { try $0.execute(sql: "DELETE FROM outbox") }
+        try db.writeAssignedIssueSnapshot(now: t0)
+        try db.writeAssignedIssueSnapshot(now: t0.addingTimeInterval(60))
+        XCTAssertEqual(try db.pendingOutbox().count, 1)
+        var row = try db.read { try AssignedIssues.fetchOne($0) }!
+        XCTAssertEqual(row.modifiedAt, t0)
+        XCTAssertEqual(row.fetchedAt, t0)
+        try IssueSync.apply([GitHubIssue(repoOwner: "acme", repoName: "web", number: 8, title: "New", isPullRequest: false,
+                                         state: "open", updatedAt: t0, assignedToMe: true)], to: db)
+        try db.writeAssignedIssueSnapshot(now: t0.addingTimeInterval(120))
+        XCTAssertEqual(try db.pendingOutbox().count, 2)
+        row = try db.read { try AssignedIssues.fetchOne($0) }!
+        XCTAssertEqual(row.modifiedAt, t0.addingTimeInterval(120))
+        XCTAssertEqual(row.fetchedAt, t0.addingTimeInterval(120))
+    }
+
     // R18 reader: the cache is replaced from the payload; repos resolved by full name; unknown repo skipped.
     func testReaderReplacesCacheAndSkipsUnknownRepo() throws {
         let watch = try AppDatabase.inMemory()

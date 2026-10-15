@@ -49,10 +49,10 @@ A synced table `assignedIssues` with exactly one row (fixed uuid
 `payload` (JSON text). The payload is a list of objects with the keys `repo` (owner/name),
 `number`, `title`, `project` (the project uuid or null), ordered by repo then number.
 
-- Written by the Mac and the phone at the end of every issue sync that applied (the
-  `AccountSyncOutcome.applied == true` path), through the ordinary stamping helpers, so
-  the write lands in the outbox (R5) and merges by R3 (`modifiedAt`), which on this row
-  equals `fetchedAt`.
+- Written by the Mac and the phone at the end of every issue sync that applied, when the
+  payload changed (the `AccountSyncOutcome.applied == true` path), through the ordinary
+  stamping helpers, so the write lands in the outbox (R5) and merges by R3 (`modifiedAt`),
+  which on this row equals `fetchedAt`.
 - Read by the watch: when a remote `assignedIssues` row is applied, the watch replaces its
   local issue cache with the payload, resolving `repo` to the local repo row by full name
   (repos sync, so the row exists; a missing repo skips the issue) and marking every issue
@@ -132,9 +132,10 @@ its own, and the app reloads the timeline after each change. Tapping opens the a
   `group.io.artnim.stint` is created once. The iOS App ID is unchanged.
 - The watch ships inside the iOS app through Xcode or TestFlight. The Mac release is not
   affected; `MARKETING_VERSION` becomes 0.3.0 for the Mac, phone, watch and widget.
-- CloudKit: the `AssignedIssues` record type appears in Development after the first Mac
-  sync with the new build and must be deployed to Production before the watch (which uses
-  Production) is first run.
+- CloudKit: the `AssignedIssues` record type is added by hand in the CloudKit Console
+  (Development: `fetchedAt` Date/Time, `payload` String, `modifiedAt` Date/Time,
+  `modifiedBy` String) and deployed to Production before any 0.3.0 build runs, because
+  every build uses Production.
 
 ## 7. Error handling
 

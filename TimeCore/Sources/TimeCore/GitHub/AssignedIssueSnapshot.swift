@@ -2,7 +2,8 @@ import Foundation
 import GRDB
 
 extension AppDatabase {
-    /// R18 writer: the open issues assigned to me, ordered by repo then number, as one synced row.
+    /// R18 writer: the open issues assigned to me, ordered by repo then number, as one synced row,
+    /// stamped and logged only when the payload changed.
     public func writeAssignedIssueSnapshot(now: Date = Date()) throws {
         try write { db in
             let repos = Dictionary(uniqueKeysWithValues: try Repo.filter(Column("deletedAt") == nil).fetchAll(db).map { ($0.id!, $0) })
@@ -19,6 +20,7 @@ extension AppDatabase {
             encoder.outputFormatting = [.sortedKeys]
             let payload = String(decoding: try encoder.encode(items), as: UTF8.self)
             if var row: AssignedIssues = try db.fetchByUUID(uuid: AssignedIssues.fixedUUID) {
+                if row.deletedAt == nil, row.payload == payload { return }    // unchanged: no stamp, no outbox row
                 row.fetchedAt = now; row.payload = payload; row.deletedAt = nil
                 try db.syncUpdate(&row, deviceId: deviceId, now: now)
             } else {
