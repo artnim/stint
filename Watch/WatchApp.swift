@@ -3,7 +3,20 @@ import TimeCore
 import WatchKit
 
 final class WatchDelegate: NSObject, WKApplicationDelegate {
-    func applicationDidFinishLaunching() { Self.scheduleRefresh() }
+    func applicationDidFinishLaunching() {
+        Self.scheduleRefresh()
+        WKApplication.shared().registerForRemoteNotifications()   // R19: CloudKit's zone pushes trigger a sync
+    }
+
+    /// A silent CloudKit push: another device changed something. Sync, which also refreshes the complication.
+    func didReceiveRemoteNotification(_ userInfo: [AnyHashable: Any],
+                                      fetchCompletionHandler completionHandler: @escaping (WKBackgroundFetchResult) -> Void) {
+        guard CloudKitTransport.isSyncNotification(userInfo) else { completionHandler(.noData); return }
+        Task { @MainActor in
+            await WatchState.shared.syncNow(reason: "push")
+            completionHandler(.newData)
+        }
+    }
 
     func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
         for task in backgroundTasks {

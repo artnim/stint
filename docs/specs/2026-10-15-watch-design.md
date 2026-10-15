@@ -68,8 +68,11 @@ Amendment to the R2 table in the sync spec: `assignedIssues | yes | one row, R18
 The watch syncs at launch and when the app becomes active; immediately after start, stop,
 restart and delete (not debounced, so the tap leaves the wrist before the app sleeps); and
 in a `WKApplicationRefreshBackgroundTask` scheduled every 30 minutes, which pulls, applies,
-prunes (R17) and refreshes the complication, then schedules the next one. Failures appear
-only in the Settings status line.
+prunes (R17) and refreshes the complication, then schedules the next one. It also syncs
+when a silent CloudKit push for the Stint zone arrives (amended 2026-10-15: without it a
+start or stop on the Mac or phone reached the complication only at the next refresh);
+watchOS throttles these pushes, so the 30-minute refresh stays as the fallback. Failures
+appear only in the Settings status line.
 
 ---
 

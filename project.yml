@@ -122,6 +122,8 @@ targets:
         com.apple.developer.icloud-services: [CloudKit]
         com.apple.developer.icloud-container-environment: Production
         com.apple.security.application-groups: [group.io.artnim.stint]
+        # silent CloudKit pushes wake the watch to sync (R19); development like the phone installed from Xcode
+        aps-environment: development
     settings:
       base:
         SWIFT_VERSION: "5.0"
