@@ -16,6 +16,7 @@ struct RunningProvider: TimelineProvider {
     /// minute for the next three hours, so the circular gauge and its h:mm label advance on their own.
     func getTimeline(in context: Context, completion: @escaping (Timeline<RunningEntry>) -> Void) {
         let now = current()
+        ComplicationStore.noteTimeline(ComplicationStore.Snapshot(description: now.description, start: now.start))
         guard let start = now.start else { completion(Timeline(entries: [now], policy: .never)); return }
         let elapsedMinutes = max(0, floor(now.date.timeIntervalSince(start) / 60))
         let following = (1...180).map { i in
