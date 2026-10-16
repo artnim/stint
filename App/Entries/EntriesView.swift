@@ -41,7 +41,8 @@ struct EntriesView: View {
                 ForEach(days) { group in
                     Section {
                         ForEach(group.entries) { e in
-                            EntryRow(entry: e) { reloadToken += 1 }
+                            // a stop or start elsewhere rebuilds the row: its editing copy could keep showing "running"
+                            EntryRow(entry: e) { reloadToken += 1 }.id("\(e.id ?? 0)-\(e.endUTC == nil)")
                         }
                     } header: {
                         HStack {
