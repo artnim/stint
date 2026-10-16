@@ -113,7 +113,10 @@ stint in a complication, and syncs when it comes to the foreground, after every 
 iCloud pushes a change made on another device, and about every 30 minutes in the
 background (watchOS decides the exact moment of pushes and refreshes). To receive pushes
 the watch app asks for provisional notification permission; it shows no prompt and posts
-nothing. Settings on the watch and the phone show whether pushes arrive. It installs
+nothing. Settings on the watch and the phone show whether pushes arrive. watchOS does not
+redraw a complication for a change the app learns in the background, so the complication
+also asks iCloud itself whenever watchOS lets it refresh (about every 15 to 60 minutes): a
+stint started or stopped elsewhere shows up there without opening the app. It installs
 with the iPhone app from Xcode (the scheme `StintWatch` runs it on a paired watch) or from
 TestFlight. There is no GitHub token on the watch: the Mac and the phone publish the
 assigned-issue list through iCloud.
@@ -186,7 +189,8 @@ Watch release steps (do these before any 0.3.0 build runs, and in this order):
 2. In the developer portal, create the App Group `group.io.artnim.stint`.
 3. Create the App ID `io.artnim.stint.ios.watchkitapp` with iCloud (the Stint container)
    and App Groups.
-4. Create the App ID `io.artnim.stint.ios.watchkitapp.widget` with App Groups.
+4. Create the App ID `io.artnim.stint.ios.watchkitapp.widget` with iCloud (the Stint
+   container) and App Groups.
 
 ### Release via GitHub Actions
 

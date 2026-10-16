@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: io.artnim
   deploymentTarget:
     macOS: "14.0"
-    watchOS: "10.0"
+    watchOS: "26.0"
   createIntermediateGroups: true
 packages:
   TimeCore:
@@ -98,7 +98,7 @@ targets:
   StintWatch:
     type: application
     platform: watchOS
-    deploymentTarget: "10.0"
+    deploymentTarget: "26.0"
     sources:
       - Watch
       - WatchShared
@@ -141,7 +141,7 @@ targets:
   StintWatchWidget:
     type: app-extension
     platform: watchOS
-    deploymentTarget: "10.0"
+    deploymentTarget: "26.0"
     sources:
       - WatchWidget
       - WatchShared
@@ -157,6 +157,10 @@ targets:
     entitlements:
       path: WatchWidget/StintWatchWidget.entitlements
       properties:
+        # the complication asks CloudKit itself whether a stint started or stopped elsewhere
+        com.apple.developer.icloud-container-identifiers: [iCloud.io.artnim.stint]
+        com.apple.developer.icloud-services: [CloudKit]
+        com.apple.developer.icloud-container-environment: Production
         com.apple.security.application-groups: [group.io.artnim.stint]
     settings:
       base:

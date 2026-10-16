@@ -46,7 +46,8 @@ final class WatchState {
             today = try db.entries(from: dayStart, to: cal.date(byAdding: .day, value: 1, to: dayStart)!).reversed()
             lastFinished = try db.finishedEntries(from: windowStart(now: Date(), months: 1, calendar: cal), to: Date().addingTimeInterval(86400)).last
         } catch { lastError = "\(error)" }
-        let snapshot = ComplicationStore.Snapshot(description: running?.description, start: running?.startUTC)
+        let snapshot = ComplicationStore.Snapshot(description: running?.description, start: running?.startUTC, uuid: running?.uuid)
+        ComplicationStore.changeToken = try? db.setting(SyncEngine.tokenKey)   // the widget checks CloudKit from here
         if snapshot != ComplicationStore.load() {
             ComplicationStore.save(snapshot)
             WidgetCenter.shared.reloadAllTimelines()

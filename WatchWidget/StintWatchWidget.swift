@@ -12,17 +12,22 @@ struct RunningProvider: TimelineProvider {
     func getSnapshot(in context: Context, completion: @escaping (RunningEntry) -> Void) {
         completion(context.isPreview ? placeholder(in: context) : current())
     }
-    /// Idle: one entry, never refreshed (the app reloads on every change). Running: one entry per elapsed
-    /// minute for the next three hours, so the circular gauge and its h:mm label advance on their own.
+    /// Checks CloudKit first: watchOS ignores the app's background reloads, so a stint started or stopped
+    /// elsewhere reaches the face through this check, about every 15 minutes as the reload budget allows.
+    /// The timers run on their own; running adds an entry at each full hour so the ring starts over.
     func getTimeline(in context: Context, completion: @escaping (Timeline<RunningEntry>) -> Void) {
-        let now = current()
-        ComplicationStore.noteTimeline(ComplicationStore.Snapshot(description: now.description, start: now.start))
-        guard let start = now.start else { completion(Timeline(entries: [now], policy: .never)); return }
-        let elapsedMinutes = max(0, floor(now.date.timeIntervalSince(start) / 60))
-        let following = (1...180).map { i in
-            RunningEntry(date: start.addingTimeInterval((elapsedMinutes + Double(i)) * 60), description: now.description, start: start)
+        Task {
+            let (s, note) = await CloudCheck.refreshed()
+            ComplicationStore.noteTimeline(s, check: note)
+            let now = RunningEntry(date: Date(), description: s.description, start: s.start)
+            let recheck = TimelineReloadPolicy.after(now.date.addingTimeInterval(15 * 60))
+            guard let start = s.start else { completion(Timeline(entries: [now], policy: recheck)); return }
+            let hours = floor(max(0, now.date.timeIntervalSince(start)) / 3600)
+            let following = (1...24).map { i in
+                RunningEntry(date: start.addingTimeInterval((hours + Double(i)) * 3600), description: s.description, start: start)
+            }
+            completion(Timeline(entries: [now] + following, policy: recheck))
         }
-        completion(Timeline(entries: [now] + following, policy: .atEnd))
     }
     private func current() -> RunningEntry {
         let s = ComplicationStore.load()
@@ -48,16 +53,17 @@ struct RunningView: View {
             }
         case .accessoryInline:
             if let start = entry.start { Text("Stint · \(start, style: .timer)") } else { Text("Stint · —") }
-        default:   // .accessoryCircular: the ring fills over each hour, the total runs inside as h:mm
+        default:   // .accessoryCircular: the ring fills over each hour, the total runs inside; both advance on their own
             if let start = entry.start {
-                let minutes = Int(max(0, entry.date.timeIntervalSince(start)) / 60)
-                Gauge(value: Double(minutes % 60), in: 0...60) {
+                // +1 s: an entry dated exactly on the hour must count that hour as begun
+                let hourStart = start.addingTimeInterval(floor((max(0, entry.date.timeIntervalSince(start)) + 1) / 3600) * 3600)
+                ProgressView(timerInterval: hourStart...hourStart.addingTimeInterval(3600), countsDown: false) {
                     Text("Stint")
                 } currentValueLabel: {
-                    Text(verbatim: String(format: "%d:%02d", minutes / 60, minutes % 60))
-                        .font(.system(.title3, design: .rounded)).monospacedDigit().minimumScaleFactor(0.5)
+                    Text(start, style: .timer)
+                        .font(.system(.title3, design: .rounded)).monospacedDigit().minimumScaleFactor(0.4)
                 }
-                .gaugeStyle(.accessoryCircularCapacity)
+                .progressViewStyle(.circular)
             } else {
                 ZStack {
                     AccessoryWidgetBackground()
