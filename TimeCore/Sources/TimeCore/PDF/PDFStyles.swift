@@ -1,5 +1,3 @@
-#if os(macOS)
-import AppKit
 import CoreGraphics
 import CoreText
 import Foundation
@@ -53,16 +51,24 @@ struct TextStyle {
     static let section = TextStyle(bold: true, size: 10, leading: 13, color: PDFStyles.ink)
     static let footer = TextStyle(bold: false, size: 7.5, leading: 9, color: PDFStyles.muted)
 
-    /// NSFont and NSParagraphStyle are toll-free bridged to their Core Text counterparts.
+    /// Plain Core Text attributes, so the same renderer runs on macOS and iOS.
     func attributed(_ s: String) -> NSAttributedString {
-        let font = NSFont(name: bold ? "Helvetica-Bold" : "Helvetica", size: size)!
-        let para = NSMutableParagraphStyle()
-        para.alignment = right ? .right : .left
-        para.minimumLineHeight = leading
-        para.maximumLineHeight = leading
+        let font = CTFontCreateWithName((bold ? "Helvetica-Bold" : "Helvetica") as CFString, size, nil)
+        var alignment: CTTextAlignment = right ? .right : .left
+        var lineHeight = leading
+        let para = withUnsafeBytes(of: &alignment) { a in
+            withUnsafeBytes(of: &lineHeight) { h in
+                let settings = [
+                    CTParagraphStyleSetting(spec: .alignment, valueSize: a.count, value: a.baseAddress!),
+                    CTParagraphStyleSetting(spec: .minimumLineHeight, valueSize: h.count, value: h.baseAddress!),
+                    CTParagraphStyleSetting(spec: .maximumLineHeight, valueSize: h.count, value: h.baseAddress!),
+                ]
+                return CTParagraphStyleCreate(settings, settings.count)
+            }
+        }
         return NSAttributedString(string: s, attributes: [
-            .font: font,
-            .paragraphStyle: para,
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTParagraphStyleAttributeName as String): para,
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
         ])
     }
@@ -100,4 +106,3 @@ struct TextBlock {
         ctx.restoreGState()
     }
 }
-#endif

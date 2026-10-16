@@ -63,6 +63,11 @@ the save panel (PDF export outside the container) and the open panel all worked.
 - Not tested: Mac App Store signing (no Apple Distribution certificate or Mac App Store
   provisioning profile yet) and end-to-end delivery of CloudKit pushes to the sandboxed app.
 
+**Spike 2 result (2026-10-16): done, kept.** `TextStyle.attributed` builds its font and
+paragraph style with Core Text instead of `NSFont`/`NSParagraphStyle`, and the PDF renderer
+is no longer macOS-only. Mac output is pixel-identical to before; the iOS simulator renders
+the same text, pages and fonts, differing only in glyph anti-aliasing.
+
 ### Phase 1: Monetization basics
 
 - One App Store record for all three platforms; "Stint Pro" in-app purchase (one-time vs.
@@ -88,8 +93,8 @@ the save panel (PDF export outside the container) and the open panel all worked.
 
 ### Phase 3: iPhone PDF reports (Pro)
 
-Reports screen on the phone: month or preset, preview, share or save. Reuses the shared
-renderer and rounding presets from Phase 0, spike 2.
+Reports screen on the phone: month or preset, preview, share or save. The shared renderer
+already runs on iOS (Phase 0, spike 2); the work is the screen and the presets.
 
 ### Phase 4: Jira and Linear (Pro)
 
