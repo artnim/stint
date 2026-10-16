@@ -46,6 +46,23 @@ GitLab is free because it is open source and popular with the people likely to c
 
 Phase 1 depends on spike 1 succeeding at a reasonable cost.
 
+**Spike 1 result (2026-10-16): go.** A sandboxed Debug build with only
+`network.client` and `files.user-selected.read-write` added ran without kernel sandbox
+denials. GitHub (Keychain token plus network), CloudKit sync (Development environment),
+the save panel (PDF export outside the container) and the open panel all worked. Findings:
+
+- `container-migration.plist` works but **moves** the source folder (Apple's docs say
+  "copy"). After migration, a DMG copy on the same Mac finds its database gone and refills
+  it from iCloud: the App Store build replaces the DMG on a Mac, and the docs must say so.
+- The migration runs only when `~/Library/Containers/io.artnim.stint` does not exist; delete
+  it before every migration test.
+- A custom database folder (`databasePath`, a plain path) fails after relaunch with
+  "Operation not permitted": needs a security-scoped bookmark.
+- Fixed on main: the app crashed instead of showing its "cannot open database" alert; the
+  Timetracker migration is removed.
+- Not tested: Mac App Store signing (no Apple Distribution certificate or Mac App Store
+  provisioning profile yet) and end-to-end delivery of CloudKit pushes to the sandboxed app.
+
 ### Phase 1: Monetization basics
 
 - One App Store record for all three platforms; "Stint Pro" in-app purchase (one-time vs.
@@ -55,7 +72,10 @@ Phase 1 depends on spike 1 succeeding at a reasonable cost.
 - Private package boundary in `project.yml`: the open build compiles without it.
 - iPhone and Watch apps gated behind Pro; the free behaviour (read-only or a trial) is decided
   in the phase spec.
-- Ship: sandboxed Mac App Store build, privacy policy, landing page, App Store listing.
+- Sandboxed Mac App Store build: App Store configuration with sandbox entitlements,
+  `container-migration.plist` for `${ApplicationSupport}/Stint`, security-scoped bookmark
+  for a custom database folder, Apple Distribution certificate and provisioning profile.
+- Ship: privacy policy, landing page, App Store listing.
 
 ### Phase 2: Tracker abstraction and GitLab (free)
 
