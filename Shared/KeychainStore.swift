@@ -11,7 +11,6 @@ struct GitHubAccount: Codable, Identifiable, Equatable {
 
 enum KeychainStore {
     static let service = "io.artnim.stint"
-    static let legacyService = "io.artnim.timetracker"   // the app's name before 0.1.0
     static let tokenAccount = "github-token"          // legacy single token (migrated on first read)
     static let accountsAccount = "github-accounts"    // JSON array of GitHubAccount
     /// Shared by the Mac and iPhone apps (`keychain-access-groups` in both entitlements), so the synced item is
@@ -36,18 +35,14 @@ enum KeychainStore {
 
     static func read(_ account: String) -> String? {
         if let value = read(account, service: service, synchronizable: true) { return value }
-        // first launch after enabling sync, or after the rename: adopt the local item.
+        // first launch after enabling sync: adopt the local item.
         // Delete the legacy item only once the synchronizable write succeeded (unsigned builds
         // get errSecMissingEntitlement and must not lose the token).
-        for svc in [service, legacyService] {
-            if let legacy = read(account, service: svc, synchronizable: false) {
-                if (try? write(account, legacy)) != nil {
-                    SecItemDelete(query(account, service: svc, synchronizable: false) as CFDictionary)
-                }
-                return legacy
-            }
+        guard let legacy = read(account, service: service, synchronizable: false) else { return nil }
+        if (try? write(account, legacy)) != nil {
+            SecItemDelete(query(account, service: service, synchronizable: false) as CFDictionary)
         }
-        return nil
+        return legacy
     }
 
     private static func read(_ account: String, service: String, synchronizable: Bool) -> String? {
