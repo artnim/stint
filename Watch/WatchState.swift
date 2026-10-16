@@ -16,6 +16,7 @@ final class WatchState {
     var today: [Entry] = []
     var lastError: String?
     var syncStatus = "Sync: not started"
+    private(set) var complicationReloadedAt: Date?
     private let transport: CloudKitTransport
     private let engine: SyncEngine
     private var writing = false   // a tap while a write is pending is ignored
@@ -49,6 +50,7 @@ final class WatchState {
         if snapshot != ComplicationStore.load() {
             ComplicationStore.save(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
+            complicationReloadedAt = Date()
         }
     }
 

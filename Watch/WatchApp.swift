@@ -30,7 +30,13 @@ final class WatchDelegate: NSObject, WKApplicationDelegate {
         guard CloudKitTransport.isSyncNotification(userInfo) else { completionHandler(.noData); return }
         PushDiagnostics.received()
         Task { @MainActor in
-            await WatchState.shared.syncNow(reason: "push")
+            let state = WatchState.shared
+            let started = Date()
+            PushDiagnostics.handling()
+            await state.syncNow(reason: "push")
+            let seconds = Date().timeIntervalSince(started).formatted(.number.precision(.fractionLength(1)))
+            let reloaded = (state.complicationReloadedAt ?? .distantPast) >= started
+            PushDiagnostics.handled("\(state.syncStatus) in \(seconds)s, complication \(reloaded ? "reloaded" : "unchanged")")
             completionHandler(.newData)
         }
     }

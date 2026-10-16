@@ -6,6 +6,7 @@ public enum PushDiagnostics {
     private static let registeredKey = "push.registered"
     private static let errorKey = "push.error"
     private static let lastKey = "push.last"
+    private static let outcomeKey = "push.outcome"
 
     private static let requestedKey = "push.requested"
 
@@ -27,6 +28,16 @@ public enum PushDiagnostics {
         UserDefaults.standard.set(date, forKey: lastKey)
     }
 
+    /// The watch marks a push it starts handling and overwrites the mark with the result, so a push whose
+    /// handling was cut short (the app suspended mid-sync) still reads "did not finish".
+    public static func handling() {
+        UserDefaults.standard.set("did not finish", forKey: outcomeKey)
+    }
+
+    public static func handled(_ outcome: String) {
+        UserDefaults.standard.set(outcome, forKey: outcomeKey)
+    }
+
     /// e.g. "Push: registered · last 16:31, 15 Oct" or "Push: failed – no valid aps-environment".
     public static var summary: String {
         let d = UserDefaults.standard
@@ -37,6 +48,7 @@ public enum PushDiagnostics {
             state = "no answer to request at " + asked.formatted(date: .omitted, time: .shortened)
         } else { state = "never requested" }
         let last = (d.object(forKey: lastKey) as? Date).map { "last " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "none received"
-        return "Push: \(state) · \(last)"
+        let outcome = d.string(forKey: outcomeKey).map { " → \($0)" } ?? ""
+        return "Push: \(state) · \(last)\(outcome)"
     }
 }
