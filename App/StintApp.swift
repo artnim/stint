@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct StintApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var state = AppState.load()
+    @State private var state = isRunningForPreviews ? AppState(db: .preview()) : AppState.load()
 
     var body: some Scene {
         MenuBarExtra {

@@ -86,3 +86,7 @@ struct EntryEditor: View {
         if state.update(e) { onSave(); dismiss() }
     }
 }
+
+#Preview {
+    MobileEntriesView().environment(MobileState(db: .preview(), syncing: false))
+}

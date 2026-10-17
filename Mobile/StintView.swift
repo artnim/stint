@@ -71,3 +71,7 @@ struct StintView: View {
         return order.map { IssueGroupRow(name: $0, rows: byName[$0]!) }
     }
 }
+
+#Preview {
+    StintView().environment(MobileState(db: .preview(), syncing: false))
+}

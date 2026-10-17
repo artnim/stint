@@ -24,7 +24,7 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct MobileApp: App {
     @UIApplicationDelegateAdaptor(MobileAppDelegate.self) private var delegate
-    @State private var state = MobileState()
+    @State private var state = MobileState.load()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
