@@ -58,3 +58,7 @@ struct MobileSettingsView: View {
         }
     }
 }
+
+#Preview {
+    MobileSettingsView().environment(MobileState(db: .preview(), syncing: false))
+}

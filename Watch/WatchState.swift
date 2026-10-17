@@ -6,7 +6,9 @@ import WidgetKit
 @Observable @MainActor
 final class WatchState {
     /// One instance on every launch path, including a background relaunch for a refresh task.
-    static let shared = WatchState()
+    /// Previews (and Xcode's preview launch) get sample data and no sync.
+    static let shared = isRunningForPreviews ? WatchState(db: .preview(), syncing: false)
+        : WatchState(db: try! AppDatabase.open(at: databaseURL), syncing: true)   // no alert path on the wrist; a failure here is a programming error
     let db: AppDatabase
     var running: Entry?
     var lastFinished: Entry?
@@ -17,18 +19,18 @@ final class WatchState {
     var lastError: String?
     var syncStatus = "Sync: not started"
     private(set) var complicationReloadedAt: Date?
-    private let transport: CloudKitTransport
-    private let engine: SyncEngine
+    private let transport: CloudKitTransport?   // nil in previews: no iCloud
+    private let engine: SyncEngine?
     private var writing = false   // a tap while a write is pending is ignored
 
     static var databaseURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "Stint/stint.sqlite")
     }
 
-    private init() {
-        db = try! AppDatabase.open(at: Self.databaseURL)      // no alert path on the wrist; a failure here is a programming error
-        transport = CloudKitTransport(database: db)
-        engine = SyncEngine(database: db, transport: transport)
+    init(db: AppDatabase, syncing: Bool) {
+        self.db = db
+        transport = syncing ? CloudKitTransport(database: db) : nil
+        engine = transport.map { SyncEngine(database: db, transport: $0) }
         refresh()
         NotificationCenter.default.addObserver(forName: CloudKitTransport.accountChangedNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.syncNow(reason: "account changed") }
@@ -102,6 +104,7 @@ final class WatchState {
     // MARK: sync
 
     func syncNow(reason: String) async {
+        guard let transport, let engine else { return }
         let available = await transport.accountAvailable()
         guard !Task.isCancelled else { return }
         guard available else { syncStatus = "Sync off: not signed in to iCloud"; return }

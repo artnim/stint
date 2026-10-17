@@ -18,18 +18,24 @@ final class MobileState {
     var lastError: String?
     var githubError: String?
     var syncStatus = "Sync: not started"
-    private let transport: CloudKitTransport
-    private let engine: SyncEngine
+    private let transport: CloudKitTransport?   // nil in previews: no iCloud
+    private let engine: SyncEngine?
     private var debounced: Task<Void, Never>?
 
     static var databaseURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "Stint/stint.sqlite")
     }
 
-    init() {
-        db = try! AppDatabase.open(at: Self.databaseURL)      // the phone has no alert path; a failure here is a programming error
-        transport = CloudKitTransport(database: db)
-        engine = SyncEngine(database: db, transport: transport)
+    /// The app's state: the real database, synced. Previews (and Xcode's preview launch) get sample data and no sync.
+    static func load() -> MobileState {
+        isRunningForPreviews ? MobileState(db: .preview(), syncing: false)
+            : MobileState(db: try! AppDatabase.open(at: databaseURL), syncing: true)   // the phone has no alert path; a failure here is a programming error
+    }
+
+    init(db: AppDatabase, syncing: Bool) {
+        self.db = db
+        transport = syncing ? CloudKitTransport(database: db) : nil
+        engine = transport.map { SyncEngine(database: db, transport: $0) }
         Self.shared = self
         refresh()
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -124,6 +130,7 @@ final class MobileState {
     }
 
     func syncNow(reason: String) async {
+        guard let transport, let engine else { return }
         let available = await transport.accountAvailable()
         guard !Task.isCancelled else { return }   // a superseded debounce must not report "not signed in"
         guard available else { syncStatus = "Sync off: not signed in to iCloud"; return }

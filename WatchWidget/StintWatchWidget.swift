@@ -89,3 +89,13 @@ struct StintWatchWidget: Widget {
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline])
     }
 }
+
+private extension RunningEntry {
+    static let hourPlus = RunningEntry(date: .now, description: "#1427: Favorites & Images", start: .now.addingTimeInterval(-(83 * 60 + 45)))
+    static let minutes = RunningEntry(date: .now, description: "Pull request maintenance", start: .now.addingTimeInterval(-25 * 60))
+    static let idle = RunningEntry(date: .now, description: nil, start: nil)
+}
+
+#Preview("Circular", as: .accessoryCircular) { StintWatchWidget() } timeline: { RunningEntry.hourPlus; RunningEntry.minutes; RunningEntry.idle }
+#Preview("Rectangular", as: .accessoryRectangular) { StintWatchWidget() } timeline: { RunningEntry.hourPlus; RunningEntry.minutes; RunningEntry.idle }
+#Preview("Inline", as: .accessoryInline) { StintWatchWidget() } timeline: { RunningEntry.hourPlus; RunningEntry.minutes; RunningEntry.idle }

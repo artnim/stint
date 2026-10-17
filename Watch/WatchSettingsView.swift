@@ -18,3 +18,7 @@ struct WatchSettingsView: View {
         }
     }
 }
+
+#Preview {
+    WatchSettingsView().environment(WatchState(db: .preview(), syncing: false))
+}

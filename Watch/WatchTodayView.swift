@@ -30,3 +30,7 @@ struct WatchTodayView: View {
         }
     }
 }
+
+#Preview {
+    WatchTodayView().environment(WatchState(db: .preview(), syncing: false))
+}

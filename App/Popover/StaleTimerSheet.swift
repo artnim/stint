@@ -21,3 +21,8 @@ struct StaleTimerSheet: View {
         .frame(width: 420)
     }
 }
+
+#Preview {
+    let state = AppState(db: .preview())
+    StaleTimerSheet(entry: state.running!).environment(state)
+}

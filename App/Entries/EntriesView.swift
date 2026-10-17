@@ -148,3 +148,7 @@ struct EntryRow: View {
         }
     }
 }
+
+#Preview {
+    EntriesView().environment(AppState(db: .preview())).frame(width: 900, height: 600)
+}

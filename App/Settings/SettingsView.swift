@@ -76,3 +76,7 @@ struct GeneralSettingsTab: View {
         }
     }
 }
+
+#Preview {
+    SettingsView().environment(AppState(db: .preview()))
+}

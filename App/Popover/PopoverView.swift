@@ -199,3 +199,7 @@ struct RunningView: View {
         .onChange(of: entry.description) { _, new in text = new }
     }
 }
+
+#Preview {
+    PopoverView().environment(AppState(db: .preview()))
+}

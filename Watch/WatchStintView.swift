@@ -75,3 +75,7 @@ struct WatchStintView: View {
         return order.map { IssueGroup(name: $0, rows: byName[$0]!) }
     }
 }
+
+#Preview {
+    WatchStintView().environment(WatchState(db: .preview(), syncing: false))
+}

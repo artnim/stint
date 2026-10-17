@@ -198,3 +198,7 @@ struct ReportsView: View {
         }
     }
 }
+
+#Preview {
+    ReportsView().environment(AppState(db: .preview())).frame(width: 1100, height: 760)
+}
